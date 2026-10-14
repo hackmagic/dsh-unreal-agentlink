@@ -62,7 +62,7 @@ The plugin automatically enables its two engine-shipped dependencies, `IKRig` an
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 154 tests + catalog reconciliation, one command
+npm run check      # typecheck + 173 tests + catalog reconciliation, one command
 ```
 
 `npm run check` must be fully green before going further. It verifies three things: sources and tests both typecheck, the behaviour tests all pass, and the 170-command catalog lines up with the C++ registry entry by entry.
@@ -78,6 +78,41 @@ npm run check      # typecheck + 154 tests + catalog reconciliation, one command
 ```
 
 **Note**: in DSH's configuration layering, a later layer **replaces** this row's `config` wholesale rather than deep-merging it. To override any key you must rewrite every key you want to keep.
+
+#### With the installer script
+
+DSH ships no command that installs a local out-of-tree plugin, and `dsh plugin --profile desktop` is refused outright because the Electron app manages that profile exclusively (`bin.js:38`). So this repo ships one:
+
+```bash
+npm run status:dsh -- --profile web   # what is registered right now (npm passthrough)
+node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
+```
+
+It refuses the `desktop` profile, refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success. If the peer-dependency guard stops the install it prints the exact command to accept the risk — **that decision is yours, not the script's**.
+
+#### By hand
+
+The underlying mechanism is four steps. Where `<profile>` is `web` (or any non-desktop profile):
+
+```bash
+npm run build    # the mirror ships lib/, and a mirror made before the build is a partial plugin
+cp -r lib cordis.patch.yml package.json LICENSE README.md "$DSH_HOME/profiles/<profile>/.vendor/"
+dsh plugin --profile <profile> install
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+plus two entries in `<profile>/package.json`:
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+Both are mandatory and they fail differently: a listed package that declares no `dsh.bundle` fails **loud** at boot, while an installed package that is not listed contributes **no layer at all**. And `file:` must point at a copy, not at your workspace — pnpm copies what it finds at install time, so a half-saved source file becomes the plugin DSH loads.
+
+The `desktop` profile has no CLI path: the Electron app holds a lock on its `package.json` while it runs, and a contender never deletes another holder's lock. Use the GUI's plugin manager, or close the app first.
+
+If an AI agent is doing the installation, hand it [INSTALL-ai.md](INSTALL-ai.md) instead — it is the same procedure written as a checklist it can read and verify.
 
 ---
 

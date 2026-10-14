@@ -61,7 +61,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 154 个测试 + catalog 对账，一条命令
+npm run check      # typecheck + 173 个测试 + catalog 对账，一条命令
 ```
 
 `npm run check` 必须全绿再往下走。它验证三件事：源码与测试都能通过类型检查、行为测试全过、170 条命令目录与 C++ 注册表逐条对齐。
@@ -77,6 +77,42 @@ npm run check      # typecheck + 154 个测试 + catalog 对账，一条命令
 ```
 
 **注意**：DSH 配置分层中，后一层会**整体替换**这一行的 `config`，而不是深合并。要覆盖任何配置键，必须把想保留的键全部重写一遍。
+
+#### 用安装脚本
+
+DSH 没有提供安装「本地未打包插件」的命令，而且 `dsh plugin --profile desktop` 会被直接拒绝（`bin.js:38`，该 profile 只允许 Electron 应用管理）。所以本仓库自带一个：
+
+```bash
+npm run status:dsh -- --profile web   # 先看当前注册情况（npm 参数透传）
+node scripts/install-dsh-plugin.mjs --profile web            # 镜像、改 manifest、安装、验证
+```
+
+它会拒绝 `desktop` profile，拒绝修改仍被运行中的 DSH 持有的 manifest，并且只在确认配置层真正生效后才报告成功。如果被 peer 依赖守卫拦住，它会打印出接受风险的确切命令——**这个决定是你的，不是脚本的**。
+
+#### 手动安装
+
+底层机制是四步。`<profile>` 填 `web`（或任何非 desktop 的 profile）：
+
+```bash
+npm run build    # 镜像里要带 lib/，先构建再镜像，否则装上去的是半个插件
+cp -r lib cordis.patch.yml package.json LICENSE README.md "$DSH_HOME/profiles/<profile>/.vendor/"
+dsh plugin --profile <profile> install
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+另外还要在 `<profile>/package.json` 里加两处：
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+两处都必需，且失败方式不同：列进 bundles 但没声明 `dsh.bundle` 会在启动时**明确报错**；装好了却没列进 bundles 则**完全不产生配置层**。另外 `file:` 必须指向副本而不是工作区——pnpm 在安装时复制它看到的内容，一个只保存了一半的源文件就会变成 DSH 实际加载的插件。
+
+`desktop` profile 没有命令行路径：Electron 应用运行期间持有它 `package.json` 的锁，而竞争方永远不会删除别人的锁。请用 GUI 自带的插件管理，或先关掉应用。
+
+如果是 AI agent 在装，直接把 [INSTALL-ai.md](INSTALL-ai.md) 交给它——那是同一套流程写成的、它可以逐条核对的清单。
+
 
 ---
 

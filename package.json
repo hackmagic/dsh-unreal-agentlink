@@ -25,6 +25,8 @@
     "test:watch": "vitest",
     "check": "npm run build && npm run typecheck && npm test && node scripts/check-catalog.mjs && node scripts/gen-docs.mjs --check && node scripts/normalize-doc-headers.mjs --check && node scripts/normalize-doc-links.mjs --check",
     "docs": "node scripts/gen-docs.mjs && node scripts/normalize-doc-headers.mjs && node scripts/normalize-doc-links.mjs",
+    "install:dsh": "node scripts/install-dsh-plugin.mjs",
+    "status:dsh": "node scripts/install-dsh-plugin.mjs --status",
     "clean": "node -e \"require('fs').rmSync('lib',{recursive:true,force:true})\"",
     "prepare": "npm run clean && npm run build",
     "prepack": "npm run clean && npm run build"

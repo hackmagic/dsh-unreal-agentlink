@@ -41,6 +41,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const TOPIC_DOCS = ['01-tutorial.md', '02-protocol.md', '03-architecture.md'] as const
 const GENERATED = 'command-reference.md'
+/** Files that are not translations and not generated, so they live beside the canonical docs. */
+const SHARED_DOCS = ['INSTALL-ai.md'] as const
 
 /** Where the README for a language lives, relative to the repo root. */
 const readmeOf = (lang) => (lang.dir === '' ? 'README.md' : `docs/readme/README_${lang.code}.md`)
@@ -129,8 +131,12 @@ describe('documentation layout', () => {
   it('holds only the files we know about in each language directory', () => {
     // A stray file in `docs/ja/` is almost always a leftover from a rename, and it will
     // be linked from nowhere and read by nobody. Cheap to catch, cheap to miss.
+    //
+    // The shared install guide is the deliberate exception: `docs/INSTALL-ai.md` is the
+    // English original and `docs/zh/INSTALL-ai.md` is its translation, so each language
+    // directory is allowed to carry one extra file that is not a topic doc.
     const expected = (lang) =>
-      new Set([...TOPIC_DOCS, GENERATED].map((doc) => `docs/${lang.dir}/${doc}`))
+      new Set([...TOPIC_DOCS, GENERATED, ...(lang.dir === '' ? [] : ['INSTALL-ai.md'])].map((doc) => `docs/${lang.dir}/${doc}`))
     const strays = LANGUAGES.filter((l) => l.dir !== '').flatMap((lang) => {
       let actual: string[] = []
       try {
