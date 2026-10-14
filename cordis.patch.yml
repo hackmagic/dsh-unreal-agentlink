@@ -1,0 +1,16 @@
+# The bundle layer this package contributes to a profile.
+#
+# One row, because the plugin is one module: it needs nothing from the composition
+# except the `tools` registry (declared as a hard `inject`), and reads `approval`,
+# `jobs`, `fs`, `attachments` and `agents` through `ctx.get` so a composition that
+# omits any of them loses one feature instead of failing to load.
+#
+# `config` here restates only the defaults the schema already carries — the schema
+# is the source of truth, and users override rows in their own profile patch
+# without touching this package. Uncomment and edit to change the deployment
+# values; remember that a later layer REPLACES a row's whole config rather than
+# deep-merging, so restate every key you want to keep.
+
+- insert:
+    - id: unreal-agentlink
+      name: dsh-unreal-agentlink

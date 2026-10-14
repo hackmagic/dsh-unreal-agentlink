@@ -1,0 +1,13 @@
+/.vscode/
+/.idea/
+/node_modules/
+/.ua-ref/
+/.audit-tmp/
+
+# Build output. `prepare`/`prepack` regenerate it, and `npm run check` typechecks
+# the sources directly, so a stale lib/ in git can only mislead.
+/lib/
+
+# Local scratch files. `.audit-tmp/` is ignored as a directory, but a subagent may
+# still drop a one-off verifier at the repo root — keep them out of the commit.
+/.verify-*
