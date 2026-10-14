@@ -61,8 +61,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 173 个测试 + catalog 对账，一条命令
-```
+npm run check      # typecheck + 173 个测试 + catalog 对账，一条命令```
 
 `npm run check` 必须全绿再往下走。它验证三件事：源码与测试都能通过类型检查、行为测试全过、170 条命令目录与 C++ 注册表逐条对齐。
 

@@ -32,14 +32,17 @@ src/
   errors/translate.ts   error classification (by class name / status code, not by text)
   resilience/breaker.ts rate limiter + circuit breaker
   sessions/state.ts     session ledger, LIFO test, lock merging, cache, log filtering
-  tools/                the 12 tools
+  tools/                그 12개 도구
 scripts/
-  extract-methods.mjs   extracts the catalog from the C++ (generates method-data.ts)
-  check-catalog.mjs     reconciles catalog against the C++ registry, both directions
-  gen-docs.mjs          renders docs/<lang>/command-reference.md for all 9 languages
-  languages.mjs         the language set — shared by the generator and the docs tests
-docs/                   tutorial / protocol / architecture / command reference, ×9 languages
-tests/                  162 tests in 8 files
+  extract-methods.mjs   C++에서 카탈로그를 추출한다(method-data.ts를 생성)
+  check-catalog.mjs     카탈로그와 C++ 레지스트리를 양방향으로 대조한다
+  gen-docs.mjs          9개 언어 전부에 대해 docs/<lang>/command-reference.md를 렌더링한다
+  languages.mjs         언어 집합 — 생성기와 문서 테스트가 공유한다
+  normalize-doc-headers.mjs  언어 집합에서 언어 막대와 문서 내비게이션 줄을 다시 쓴다
+  normalize-doc-links.mjs    본문 링크를 그 파일이 놓인 위치에서 resolve되도록 다시 쓴다
+  install-dsh-plugin.mjs     이 플러그인을 dsh 프로필에 등록한다(미러, 매니페스트, 설치, 검증)
+docs/                   튜토리얼 / 프로토콜 / 아키텍처 / 명령 참조 / 설치 가이드, ×9 언어
+tests/                  9개 파일에 173개 테스트
 ```
 
 ### 의존성 방향
@@ -248,11 +251,15 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 154 tests
+vitest run                         # 173 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
+node scripts/gen-docs.mjs --check  # 9개 언어의 명령 참조가 최신인지
+node scripts/normalize-doc-headers.mjs --check   # 54개 파일의 언어 막대가 규격인지
+node scripts/normalize-doc-links.mjs --check     # 본문 링크가 제 자리에서 resolve되는지
+npm run install:dsh -- --profile web    # 이 플러그인을 dsh 프로필에 등록
 ```
 
-테스트는 8개 파일에 있고, **그들이 찾아낼 수 있는 결함의 종류**로 나뉜다:
+테스트는 9개 파일에 있고, **그들이 찾아낼 수 있는 결함의 종류**로 나뉜다:
 
 | 파일 | 커버리지 |
 |---|---|
@@ -264,12 +271,13 @@ node scripts/check-catalog.mjs     # 4 reconciliation checks
 | `tool-output.test.ts` | 2단계 파이프라인을 통과하는 모든 tool의 실제 반환값 |
 | `i18n.test.ts` | 9개 언어 전체에서 문서가 완전하고 내부적으로 일관됨 |
 | `end-to-end.test.ts` | 실제 gate chain + 실제 소켓 + 실제 tool schema |
+| `installer.test.ts` | DSH 프로필 설치기: 인자 처리, 매니페스트의 두 항목, 미러 경계, 잠금 거부 |
 
 **왜 `end-to-end.test.ts`가 존재해야 하는가**: 다른 모든 테스트는 한 레이어를 스텁한다. `REQUIRED_KEYS` 버그 — 생성되고 문서화되고 리뷰됐는데 임포트되지 않음 — 는 어떤 단위 테스트에도 잡히지 않았는데, 각 레이어가 고립된 상태에서 자기 정합적이었기 때문이다. 실제 gate chain을 실제 소켓에 연결해서 실제 schema에 먹여줘야만 **레이어 사이의 이음새**가 드러난다.
 
 같은 이유로 `tool-output.test.ts`는 자체 schema 검사를 쓰지 않고 **실제** `snapshotJsonValue` + `validateJsonSchemaValue`를 쓴다 — 그렇지 않으면 `ual_status`의 `undefined` 결함이 그냥 빠져나갈 것이다.
 
-`i18n.test.ts`는 같은 이유로, 다른 이음새에 대해 존재한다. `src/` 아래의 모든 것은 `docs/`에 대해 아무것도 모르므로, 기존 테스트로는 언어 전환 바에서 언어를 빠뜨렸거나 이름을 바꾼 제목에 링크한 번역을 눈치챌 수 없었다. 그것은 문서를 데이터로 읽는다: 모든 언어가 네 파일을 가지고, 모든 바가 아홉 언어를 모두 나열하고 자신의 것만 볼드하며, 모든 상대 링크가 실제 파일로 resolve되고, 모든 `#anchor`가 실제 제목으로 resolve된다. 마지막이 흥미로운 것인데 — 앵커는 *번역된* 제목 텍스트에서 도출되므로, 번역자가 "Verification strategy"를 다르게 쓰는 순간 그 절로 들어오는 모든 링크가 조용히 무효가 되고 어디에도 오류가 나지 않는다. `gen-docs.mjs --check`는 생성된 명령 참조를 같은 방식으로 보호한다; `i18n.test.ts`는 렌더를 재구현하지 않고 그것을 셸 아웃한다.
+`i18n.test.ts`는 같은 이유로, 다른 이음새에 대해 존재한다. `src/` 아래의 모든 것은 `docs/`에 대해 아무것도 모르므로, 기존 테스트로는 언어 전환 바에서 언어를 빠뜨렸거나 이름을 바꾼 제목에 링크한 번역을 눈치챌 수 없었다. 그것은 문서를 데이터로 읽는다: 모든 언어가 다섯 파일을 가지고, 모든 바가 아홉 언어를 모두 나열하고 자신의 것만 볼드하며, 모든 상대 링크가 실제 파일로 resolve되고, 모든 `#anchor`가 실제 제목으로 resolve된다. 마지막이 흥미로운 것인데 — 앵커는 *번역된* 제목 텍스트에서 도출되므로, 번역자가 "Verification strategy"를 다르게 쓰는 순간 그 절로 들어오는 모든 링크가 조용히 무효가 되고 어디에도 오류가 나지 않는다. `gen-docs.mjs --check`는 생성된 명령 참조를 같은 방식으로 보호한다; `i18n.test.ts`는 렌더를 재구현하지 않고 그것을 셸 아웃한다.
 
 ---
 

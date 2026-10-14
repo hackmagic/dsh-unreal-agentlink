@@ -1,7 +1,15 @@
+<div align="center">
+
+[English](../INSTALL-ai.md) · **简体中文** · [繁體中文](../zh-TW/INSTALL-ai.md) · [日本語](../ja/INSTALL-ai.md) · [한국어](../ko/INSTALL-ai.md) · [Deutsch](../de/INSTALL-ai.md) · [Español](../es/INSTALL-ai.md) · [Français](../fr/INSTALL-ai.md) · [Русский](../ru/INSTALL-ai.md)
+
+[README](../readme/README_zh.md) · [教程](01-tutorial.md) · [协议](02-protocol.md) · [架构](03-architecture.md) · [命令参考](command-reference.md) · **安装指南**
+
+</div>
+
 # 安装插件（AI 可读版）
 
 本文件写给「会读文件并按步骤执行的 AI 助手」：按顺序执行，不要跳步，每一步都有可验证的结果。
-人类安装请看 [README](../../README.md) 或 [教程](01-tutorial.md)。
+人类安装请看 [README](../readme/README_zh.md) 或 [教程](01-tutorial.md)。
 
 > 本文件是「让 AI 装」的入口。AI 只需要执行 `scripts/install-dsh-plugin.mjs`，
 > 该脚本会完成：镜像 → 改 profile manifest → 调真正的安装器 → 验证合成结果。

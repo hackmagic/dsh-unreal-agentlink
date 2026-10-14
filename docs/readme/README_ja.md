@@ -13,7 +13,7 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 (plans, decides)            (this plugin: server, translator)   editor dials out
 ```
 
-[必要なもの](#必要なもの) · [クイックスタート](#クイックスタート) · [12 個のツール](#12-個のツール) · [設定](#設定) · [ドキュメント](#ドキュメント)
+[インストール](#インストール) · [必要なもの](#必要なもの) · [12 個のツール](#12-個のツール) · [設定](#設定) · [ドキュメント](#ドキュメント)
 
 <code>npm install &amp;&amp; npm run check</code>
 
@@ -24,6 +24,78 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 エージェントはすでにファイルを読み、コマンドを実行できる。このプラグインはそれに**エディタそのもの**を与える：レベルを問い合わせ、アクターをスポーンさせ、ブループリントとマテリアルを編集し、シーケンスをレンダリングし、実際に*見える*スクリーンショットを撮り、何かうまくいかないときは自分の作業を巻き戻す。
 
 タスクの**計画はしない**。計画は DSH のネイティブエージェントの領分だ。このプラグインは安全層を備えた翻訳器 —— エージェントの意図を UnrealAgentLink コマンドに翻訳し、エディタの答えをエージェントが行動できる形に翻訳し直す。
+
+---
+
+## インストール
+
+3 つの部分がある：UnrealAgentLink C++ プラグインを UE プロジェクトに入れ、このプラグインを DSH にインストールし、エディタを開く。それだけだ —— **UEBox もトークンもハンドシェイクも不要**。
+
+### ステップ 1 — UnrealAgentLink を UE プロジェクトに入れる
+
+1. `UnrealAgentLink` ディレクトリ全体をプロジェクトの `Plugins/` にコピーする（グローバルに入れる場合はエンジンの `Plugins/`）。
+2. プロジェクトファイルを再生成してからプロジェクトを開く。
+3. **Edit → Plugins** で UnrealAgentLink が有効になっていることを確認する。エンジン付属の 2 つの依存（`IKRig` と `PythonScriptPlugin`）は自動的に取り込まれる。
+
+その後はエディタが自分からダイヤルアウトする：`StartupModule` が無条件に `Init("ws://127.0.0.1:17860")` を呼び出し、5 秒ごとにリトライするので、**起動順序は関係ない**。
+
+> ポートがすでに埋まっている場合（UEBox など）、エディタに別のポートを与え、この側でも合わせる：
+> `UnrealEditor.exe MyProject.uproject -UALServer=ws://127.0.0.1:17861`
+
+### ステップ 2 — このプラグインを DSH にインストールする
+
+```bash
+git clone <this-repo> dsh-unreal-agentlink
+cd dsh-unreal-agentlink
+npm install
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+```
+
+先に進む前に `npm run check` が完全にグリーンでなければならない —— ソースとテストが型チェックを通ること、振る舞いのテストが通ること、170 コマンドのカタログが C++ のレジストリと 1 件ずつ一致することを確かめる。
+
+次に DSH バンドルとして登録する。`package.json` は `dsh.bundle.patch: ./cordis.patch.yml` を宣言しており、そのファイルがすることは 1 つだけだ：
+
+```yaml
+- insert:
+    - id: unreal-agentlink
+      name: dsh-unreal-agentlink
+```
+
+> **設定のレイヤリング**：後の層はその行の `config` をディープマージではなく**全体置き換え**する。何かを上書きするには、残したいキーをすべて書き直すこと。
+
+DSH にはローカルの out-of-tree プラグインをインストールするコマンドが同梱されておらず、`dsh plugin --profile desktop` は Electron アプリがその profile を独占管理しているためその場で拒否される（`bin.js:38`）。だからこのリポジトリは、その作業を行ってから本当のインストーラに委ねるインストーラを同梱している：
+
+```bash
+npm run status:dsh -- --profile web     # 現在登録されている内容（同じスクリプト、npm パススルー）
+node scripts/install-dsh-plugin.mjs --profile web             # ミラー、manifest の編集、インストール、検証
+```
+
+それは `desktop` profile を拒否し、動作中の DSH がまだ保持している manifest に触ることを拒否し、成功を報告する前に layer が合成されていることを証明する（`dsh --profile web --dump-config` に `# == dsh-unreal-agentlink` が含まれていなければならない）。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
+
+あと 2 つの道のりがあり、どちらも文章化されている：下記の[スクリプトなしで手動インストールする](#スクリプトなしで手動インストールする)と、[INSTALL-ai.md](../ja/INSTALL-ai.md) —— AI エージェントが読んで順番に実行できるバージョン。
+
+### ステップ 3 — プロジェクトを開いて確認する
+
+UE プロジェクトを開き、エージェントに `ual_status` を呼ばせて 3 つのフィールドを確認する：
+
+```
+listening: true
+url: ws://127.0.0.1:17860
+editors: [ { sessionId: "ue-xxxxxxxx", project: "MyProject", ... } ]
+```
+
+- `listening: false` → プラグインが起動していないか、ポートが埋まっている。DSH のログで `EADDRINUSE` を探す。
+- `listening: true` だが `editors: []` → ブリッジは待機中だ。UE プロジェクトが開いていて、UnrealAgentLink が有効になっていることを確認する。
+
+エディタが接続した**最初の瞬間**、そのレコードには `sessionId` / `connectedAt` / `lastSeenAt` / `heartbeats` / `stale` しかない。`project` などのフィールドは、エディタが `project.info` をプッシュした後に初めて現れる。これは正常な状態で、エラーではない。
+
+次に副作用のない純粋な読み取りを試す：
+
+```
+ual_call { method: "level.get_current" }
+```
+
+**端から端までの手順 —— ワークフロー、失敗の読み方、トラブルシューティング —— は [チュートリアル](../ja/01-tutorial.md) にある。**
 
 ---
 
@@ -51,18 +123,38 @@ UEBox デスクトップアプリは**依存関係ではない**。同じベン�
 
 ---
 
-## クイックスタート
+## スクリプトなしで手動インストールする
+
+上記のスクリプトは便利さのためのものだ。根底にある機構は 4 行の manifest と 1 つの製品コマンドだ。`<profile>` は `web`（または desktop 以外の任意の profile）であり、`$DSH_HOME` はデフォルトで `~/.dsh` とする：
 
 ```bash
-npm install
-npm run check      # typecheck (src + tests) + 162 tests + catalog + doc reconciliation, one command
+# 1. 一度ビルドし、npm pack が出すものだけをコピーする
+npm run build
+cp -r lib cordis.patch.yml package.json LICENSE README.md \
+      "$DSH_HOME/profiles/<profile>/.vendor/"
+
+# 2. 依存とバンドルレイヤーを登録する（どちらも必須）
+"$DSH_HOME/profiles/<profile>/package.json"    # 下記の 2 つのエントリを追加する
+
+# 3. 本当のインストーラを実行させる
+dsh plugin --profile <profile> install
+
+# 4. layer が合成されていることを証明する
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 ```
 
-DSH バンドルとしてインストールするには：`package.json` は `dsh.bundle.patch` を宣言し、`cordis.patch.yml` が公開パッケージ名で 1 行を挿入する —— `{id: unreal-agentlink, name: dsh-unreal-agentlink}`。
+`<profile>/package.json` 内の 2 つのエントリ：
 
-> **設定のレイヤリング**：後の層はその行の `config` をディープマージではなく**全体置き換え**する。何かを上書きするには、残したいキーをすべて書き直すこと。
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
 
-**端から端までの手順は [チュートリアル](../ja/01-tutorial.md) を参照** —— UE 側のインストール、最初の接続、よく使うワークフロー、失敗の読み方。
+どちらも必須で、失敗のしかたが違う：`dsh.bundle` を宣言しない列挙されたパッケージは起動時に**大声で失敗する**が、インストールされているのに列挙されていないパッケージは**レイヤーをまったく提供せず**、`--dump-config` に何も現れない。
+
+**なぜ `file:` がコピーを指すのか、作業スペースを指さないのか**：pnpm はインストール時に見つけたものをコピーするので、半分保存されたソースファイル —— あるいはビルド失敗後に削除された `lib/` —— が DSH が読み込むプラグインになってしまう。まずミラーし、次にインストールする。
+
+**`desktop` profile に CLI 経路はない。** `bin.js:38` はそれを拒否する。Electron アプリケーションが独占管理しており、そのアプリは動作中 `desktop/package.json` に `wx` ロックを保持している（`dsh-atomic-write`。競合者は他の保持者のロックを決して削除しない）。選択肢は GUI 自身のプラグインマネージャを使うか、アプリを閉じて上記 4 ステップを手動で行うかだ。最初に `web` にインストールして結果をコピーするのが最も侵襲性が低い。
 
 ---
 
@@ -74,8 +166,9 @@ DSH バンドルとしてインストールするには：`package.json` は `ds
 | [プロトコルリファレンス](../ja/02-protocol.md) | メッセージ構造、イベント、13 個のステータスコード、シリアライズ規則、タイムアウトと並行性のセマンティクス |
 | [アーキテクチャ](../ja/03-architecture.md) | ゲートチェーン、セッション分離とロールバック、エラー翻訳、検証戦略、遭遇した罠 |
 | [コマンドリファレンス](../ja/command-reference.md) | 全 170 コマンドのパラメータ / 必須キー / 結果キー / ステータスコード（**自動生成**） |
+| [インストールガイド（AI 可読）](../ja/INSTALL-ai.md) | AI エージェントが読んで実行するために書かれたインストール手順。前後に実行すべきチェックとともに |
 
-上記 4 点は、このファイル先頭に挙げたすべての言語で、`docs/<lang>/` 配下に用意されている —— `en`（正式版。`docs/` 直下）、`zh`、`zh-TW`、`ja`、`ko`、`de`、`es`、`fr`、`ru`。
+上記 5 点はすべて、このファイル先頭に挙げたすべての言語で、`docs/<lang>/` 配下に用意されている —— `en`（正式版。`docs/` 直下）、`zh`、`zh-TW`、`ja`、`ko`、`de`、`es`、`fr`、`ru`。
 
 > 翻訳されるのは*本文*だけだ。コマンド名、パラメータキー、結果キー、ステータスコード、設定キー、C++ の行参照はすべての言語で逐語的に保たれる。なぜなら UE は認識しないキーを黙って無視するからだ —— 翻訳された `asset_path` はローカライズではなく、静かに死んだキーになってしまう。`tests/i18n.test.ts` は、これを保守可能にする不変条件を強制する：すべての言語にファイルがあり、すべての言語切替バーにすべての言語が並び、すべての内部リンクと `#anchor` が解決する。最後の 1 つが重要なのは、アンカーが*翻訳された*見出しから導出されるためだ。見出しの言い回しを変えれば、それを指すすべてのリンクが静かに壊れる。
 
@@ -163,9 +256,11 @@ src/
   resilience/breaker.ts     Rate limiter + circuit breaker
   sessions/state.ts         Session ledger / LIFO test / lock merging / cache / log filtering
   tools/                    The 12 tools
-scripts/                    Catalog extraction and reconciliation, doc generation, language set
-docs/                       Tutorial / protocol / architecture / command reference, in 9 languages
-tests/                      162 tests
+scripts/                    カタログ抽出と照合、ドキュメント生成と正規化、
+                            言語セット、DSH profile インストーラ
+docs/                       チュートリアル / プロトコル / アーキテクチャ / コマンドリファレンス / インストールガイド、
+                            9 言語対応
+tests/                      173 tests
 ```
 
 ### 生成ファイル：手で編集しないこと
@@ -182,8 +277,8 @@ npm run build && node scripts/gen-docs.mjs                             # rebuild
 ### テストとチェック
 
 ```bash
-npm run check                       # typecheck (src + tests) + 162 passed + catalog + doc reconciliation
-npm test                            # 162 passed
+npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
+npm test                            # 173 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
 ```

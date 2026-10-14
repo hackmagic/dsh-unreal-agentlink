@@ -3,11 +3,17 @@
  * the doc-navigation line.
  *
  * Every one of the doc files opens with a bar that lists all nine languages and a nav
- * line that lists the four documents. Those bars are mechanical — the same nine labels,
+ * line that lists the documents. Those bars are mechanical — the same nine labels,
  * the same relative paths, in the same order, in every file — but they were written by
  * hand in each translation, and hand-written mechanical text drifts. The German
  * translation, for instance, linked its own language instead of bolding it, which is
  * exactly the defect `tests/i18n.test.ts` now reports.
+ *
+ * `TOPIC_DOCS` below is the list of documents that exist once per language, so the bar
+ * generator and the stray-file test agree on it by construction. It was also the seam
+ * through which `docs/<lang>/INSTALL-ai.md` went missing for seven languages while the
+ * suite stayed green: the English and Chinese copies were written first, the guide was
+ * never added here, and nothing noticed.
  *
  * So the bars are derived here rather than hand-maintained, and this script is
  * idempotent: run it as often as you like.
@@ -38,7 +44,7 @@ import { LANGUAGES, readmeOf } from './languages.mjs'
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
 const check = process.argv.includes('--check')
 
-const TOPIC_DOCS = ['01-tutorial.md', '02-protocol.md', '03-architecture.md', 'command-reference.md']
+const TOPIC_DOCS = ['01-tutorial.md', '02-protocol.md', '03-architecture.md', 'command-reference.md', 'INSTALL-ai.md']
 
 /** POSIX path join — `join` from `node:path` is backslash on Windows, which is wrong in a link. */
 const posix = (...parts) => parts.join('/').replace(/\/+/g, '/').replace(/(^|\/)\.\//g, '$1')

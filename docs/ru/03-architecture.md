@@ -32,7 +32,18 @@ src/
   errors/translate.ts   error classification (by class name / status code, not by text)
   resilience/breaker.ts rate limiter + circuit breaker
   sessions/state.ts     session ledger, LIFO test, lock merging, cache, log filtering
-  tools/                the 12 tools
+  tools/                те 12 инструментов
+scripts/
+  extract-methods.mjs   извлекает каталог из C++ (генерирует method-data.ts)
+  check-catalog.mjs     сверяет каталог с реестром C++ в обе стороны
+  gen-docs.mjs          отрисовывает docs/<lang>/command-reference.md для всех 9 языков
+  languages.mjs         набор языков — общий для генератора и тестов документации
+  normalize-doc-headers.mjs  перезаписывает языковые панели и строки навигации по набору языков
+  normalize-doc-links.mjs    перезаписывает ссылки тела, чтобы они разрешались из своего файла
+  install-dsh-plugin.mjs     регистрирует этот плагин в профиле dsh (зеркало, манифест, установка, проверка)
+docs/                   учебник / протокол / архитектура / справочник команд / руководство по установке,
+                         ×9 языков
+tests/                  173 теста в 9 файлах
 ```
 
 ### Направление зависимостей
@@ -238,11 +249,15 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 154 tests
+vitest run                         # 173 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
+node scripts/gen-docs.mjs --check  # справочник команд актуален на 9 языках
+node scripts/normalize-doc-headers.mjs --check   # языковые панели каноничны в 54 файлах
+node scripts/normalize-doc-links.mjs --check     # ссылки тела разрешаются из файла, в котором находятся
+npm run install:dsh -- --profile web    # зарегистрировать этот плагин в профиле dsh
 ```
 
-Тесты лежат в 7 файлах, разделённых по **роду дефектов, которые они способны найти**:
+Тесты лежат в 9 файлах, разделённых по **роду дефектов, которые они способны найти**:
 
 | Файл | Покрывает |
 |---|---|
@@ -252,7 +267,9 @@ node scripts/check-catalog.mjs     # 4 reconciliation checks
 | `catalog.test.ts` | запросы к каталогу, защита цепочки прототипов, шлюз утверждения от начала до конца |
 | `bridge.test.ts` | настоящий WebSocket: очереди, зависшие по таймауту, события, остановка |
 | `tool-output.test.ts` | настоящее возвращаемое значение каждого инструмента через двухстадийный конвейер |
+| `i18n.test.ts` | документация полна и внутренне согласована на всех 9 языках |
 | `end-to-end.test.ts` | настоящая цепочка шлюзов + настоящий сокет + настоящие схемы инструментов |
+| `installer.test.ts` | установщик профиля DSH: разбор аргументов, две записи манифеста, граница зеркала, отказ при блокировке |
 
 **Почему `end-to-end.test.ts` должен существовать**: каждый другой тест заглушает один слой. Баг `REQUIRED_KEYS` — сгенерированный, документированный, вычитанный, никогда не импортированный — не был пойман ни одним юнит-тестом, потому что каждый слой был внутренне согласован в изоляции. Только соединив настоящую цепочку шлюзов с настоящим сокетом и подав это в настоящую схему, можно выявить **шов между слоями**.
 

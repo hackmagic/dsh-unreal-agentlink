@@ -30,8 +30,18 @@ src/
   errors/translate.ts       status code / class name → 16 kinds
   resilience/breaker.ts     rate limiter + circuit breaker
   sessions/state.ts         session ledger, LIFO test, lock merging, read cache, log filtering
-  tools/*.ts                the 12 tools
-tests/                      7 test files, 154 tests
+  tools/*.ts                las 12 herramientas
+scripts/
+  extract-methods.mjs       extrae el catálogo del C++ (genera method-data.ts)
+  check-catalog.mjs         reconcilia el catálogo con el registro de C++, en ambos sentidos
+  gen-docs.mjs              renderiza docs/<lang>/command-reference.md para los 9 idiomas
+  languages.mjs             el conjunto de idiomas — compartido por el generador y las pruebas de documentación
+  normalize-doc-headers.mjs  reescribe las barras de idioma y las líneas de navegación desde el conjunto de idiomas
+  normalize-doc-links.mjs    reescribe los enlaces del cuerpo para que resuelvan desde el archivo donde están
+  install-dsh-plugin.mjs     registra este plugin en un perfil de dsh (espejo, manifiesto, instalación, verificación)
+docs/                       tutorial / protocolo / arquitectura / referencia de comandos / guía de instalación,
+                            ×9 idiomas
+tests/                      9 archivos de prueba, 173 pruebas
 ```
 
 ### Dirección de las dependencias
@@ -248,7 +258,7 @@ lo cual equivale a:
 if (!outcome.ok) throw toUalError(outcome.value);
 ```
 
-Las pruebas viven en 7 archivos, divididos por **el tipo de defecto que pueden detectar**:
+Las pruebas viven en 9 archivos, divididos por **el tipo de defecto que pueden detectar**:
 
 | Archivo | Cubre |
 |---|---|
@@ -258,7 +268,9 @@ Las pruebas viven en 7 archivos, divididos por **el tipo de defecto que pueden d
 | `catalog.test.ts` | consultas al catálogo, protección de la cadena de prototipos, la compuerta de aprobación de extremo a extremo |
 | `bridge.test.ts` | un WebSocket real: colas, huérfanos por tiempo de espera, eventos, apagado |
 | `tool-output.test.ts` | el valor de retorno real de cada herramienta a través de la canalización de dos etapas |
+| `i18n.test.ts` | la documentación está completa e internamente coherente, en los 9 idiomas |
 | `end-to-end.test.ts` | la cadena de compuertas real + un socket real + esquemas de herramientas reales |
+| `installer.test.ts` | el instalador de perfiles de DSH: manejo de argumentos, las dos entradas del manifiesto, el límite del espejo, el rechazo por bloqueo |
 
 **Por qué `end-to-end.test.ts` tiene que existir**: todas las demás pruebas sustituyen una capa. El error de `REQUIRED_KEYS` — generado, documentado, revisado, nunca importado — no lo detectó ninguna prueba unitaria, porque cada capa era autoconsistente de forma aislada. Solo cablear la cadena de compuertas real a un socket real y alimentarla con un esquema real expone **la costura entre capas**.
 

@@ -29,6 +29,14 @@ import { LANGUAGES } from '../scripts/languages.mjs'
  * references, but the three hand-translated topic docs per language are unguarded
  * without this.
  *
+ * The first one is the reason this file grew. When the AI-readable install guide was
+ * added, it reached English and Simplified Chinese first; the other seven languages
+ * arrived later, and for that whole window the suite stayed green, because the guide
+ * was absent from `FILES` and merely *allowed* by the stray-file test. Two defects
+ * in one: a permission read as a requirement, and a file list that had to be edited by
+ * hand every time a document was added. `SHARED_DOCS` now joins the other lists, so a
+ * new shared document is checked the moment it is declared.
+ *
  * `LANGUAGES` comes from `scripts/languages.mjs` rather than a local copy, so adding a
  * language in one place is adding it in all of them.
  *
@@ -41,7 +49,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const TOPIC_DOCS = ['01-tutorial.md', '02-protocol.md', '03-architecture.md'] as const
 const GENERATED = 'command-reference.md'
-/** Files that are not translations and not generated, so they live beside the canonical docs. */
+/**
+ * Files that are not translations and not generated, so they live beside the canonical docs
+ * and must exist in every language. `INSTALL-ai.md` is the newest one: the English and
+ * Simplified-Chinese copies were written first, and the other seven landed later — during
+ * which time this file was only a *permission* in the stray-file test below, so a missing
+ * translation was invisible. A file in this list is therefore checked for existence, for its
+ * switcher bar, and for its links, exactly like a topic doc.
+ */
 const SHARED_DOCS = ['INSTALL-ai.md'] as const
 
 /** Where the README for a language lives, relative to the repo root. */
@@ -55,7 +70,7 @@ interface DocFile {
 
 const FILES: DocFile[] = LANGUAGES.flatMap((lang) => [
   { lang, path: join(ROOT, readmeOf(lang)), rel: readmeOf(lang) },
-  ...[...TOPIC_DOCS, GENERATED].map((doc) => ({
+  ...[...TOPIC_DOCS, ...SHARED_DOCS, GENERATED].map((doc) => ({
     lang,
     rel: lang.dir === '' ? `docs/${doc}` : `docs/${lang.dir}/${doc}`,
     path: join(ROOT, lang.dir === '' ? 'docs' : `docs/${lang.dir}`, doc),
@@ -132,11 +147,12 @@ describe('documentation layout', () => {
     // A stray file in `docs/ja/` is almost always a leftover from a rename, and it will
     // be linked from nowhere and read by nobody. Cheap to catch, cheap to miss.
     //
-    // The shared install guide is the deliberate exception: `docs/INSTALL-ai.md` is the
-    // English original and `docs/zh/INSTALL-ai.md` is its translation, so each language
-    // directory is allowed to carry one extra file that is not a topic doc.
+    // The shared install guide is a known file, not an exception: every language directory
+    // carries exactly one, so nothing extra is allowed. The line below used to *permit*
+    // it instead of requiring it, which is how seven languages went missing while the
+    // suite stayed green.
     const expected = (lang) =>
-      new Set([...TOPIC_DOCS, GENERATED, ...(lang.dir === '' ? [] : ['INSTALL-ai.md'])].map((doc) => `docs/${lang.dir}/${doc}`))
+      new Set([...TOPIC_DOCS, ...SHARED_DOCS, GENERATED].map((doc) => `docs/${lang.dir}/${doc}`))
     const strays = LANGUAGES.filter((l) => l.dir !== '').flatMap((lang) => {
       let actual: string[] = []
       try {

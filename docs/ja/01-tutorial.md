@@ -62,7 +62,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 154 tests + catalog reconciliation, one command
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
 ```
 
 先に進む前に `npm run check` が完全にグリーンでなければならない。それが確かめるのは 3 つ：ソースとテストの両方が型チェックを通ること、振る舞いのテストがすべて通ること、170 コマンドのカタログが C++ のレジストリと 1 件ずつ一致すること。
@@ -78,6 +78,41 @@ npm run check      # typecheck + 154 tests + catalog reconciliation, one command
 ```
 
 **注意**：DSH の設定レイヤリングでは、後の層はこの行の `config` をディープマージではなく**全体置き換え**する。任意のキーを上書きするには、残したいキーをすべて書き直す必要がある。
+
+#### インストールスクリプトを使う
+
+DSH にはローカルの out-of-tree プラグインをインストールするコマンドが同梱されておらず、`dsh plugin --profile desktop` は Electron アプリがその profile を独占管理しているためその場で拒否される（`bin.js:38`）。だからこのリポジトリは 1 つ同梱している：
+
+```bash
+npm run status:dsh -- --profile web   # 現在登録されている内容（npm パススルー）
+node scripts/install-dsh-plugin.mjs --profile web            # ミラー、manifest の編集、インストール、検証
+```
+
+それは `desktop` profile を拒否し、動作中の DSH がまだ保持している manifest に触ることを拒否し、成功を報告する前に layer が合成されていることを証明する。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
+
+#### 手動でインストールする
+
+根底にある機構は 4 ステップだ。`<profile>` は `web`（または desktop 以外の任意の profile）とする：
+
+```bash
+npm run build    # ミラーには lib/ が入る。ビルド前のミラーは不完全なプラグインになる
+cp -r lib cordis.patch.yml package.json LICENSE README.md "$DSH_HOME/profiles/<profile>/.vendor/"
+dsh plugin --profile <profile> install
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+加えて `<profile>/package.json` 内の 2 つのエントリ：
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+どちらも必須で、失敗のしかたが違う：`dsh.bundle` を宣言しない列挙されたパッケージは起動時に**大声で失敗する**が、インストールされているのに列挙されていないパッケージは**レイヤーをまったく提供しない**。そして `file:` は作業スペースではなくコピーを指さなければならない —— pnpm はインストール時に見つけたものをコピーするので、半分保存されたソースファイルが DSH が読み込むプラグインになってしまう。
+
+`desktop` profile に CLI 経路はない：Electron アプリは動作中その `package.json` にロックを保持しており、競合者は他の保持者のロックを決して削除しない。GUI のプラグインマネージャを使うか、先にアプリを閉じること。
+
+AI エージェントがインストールを行う場合は、代わりに [INSTALL-ai.md](INSTALL-ai.md) を渡すこと —— それは同じ手順を、読み取りと検証ができるチェックリストとして書いたものだ。
 
 ---
 

@@ -13,7 +13,7 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 (plans, decides)            (this plugin: server, translator)   editor dials out
 ```
 
-[系統需求](#系統需求) · [快速開始](#快速開始) · [12 個工具](#12-個工具) · [配置](#配置) · [文件](#文件)
+[系統需求](#系統需求) · [安裝](#安裝) · [12 個工具](#12-個工具) · [配置](#配置) · [文件](#文件) · [不使用指令碼的手動安裝](#不使用指令碼的手動安裝)
 
 <code>npm install &amp;&amp; npm run check</code>
 
@@ -24,6 +24,78 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 agent 已經會讀檔案、跑命令了。這個外掛把**編輯器本身**也交給它：查詢關卡、生成 actor、編輯藍圖與材質、渲染序列、截取它能真正*看見*的畫面，並在出錯時復原自己的成果。
 
 它**不規劃任務**。任務規劃屬於 DSH 的原生 agent。本外掛是一層帶安全措施的翻譯器 —— 把 agent 的意圖轉成 UnrealAgentLink 命令，再把編輯器的回答轉回 agent 能據以行動的形式。
+
+---
+
+## 安裝
+
+總共三個部分：把 UnrealAgentLink C++ 外掛放進你的 UE 專案、把這個外掛裝進 DSH、開啟編輯器。就這樣 —— **不需要 UEBox、不需要 token、不需要握手**。
+
+### 步驟 1 — 把 UnrealAgentLink 裝進 UE 專案
+
+1. 把整個 `UnrealAgentLink` 目錄複製到專案的 `Plugins/` 下（或引擎的 `Plugins/` 下，做全域安裝）。
+2. 重新產生專案檔，然後開啟專案。
+3. 在 **Edit → Plugins** 下確認 UnrealAgentLink 已啟用。它會自動帶入兩個引擎自帶的依賴：`IKRig` 與 `PythonScriptPlugin`。
+
+從此編輯器就自己往外連：`StartupModule` 無條件呼叫 `Init("ws://127.0.0.1:17860")`，並每 5 秒重試一次，所以**啟動順序無所謂**。
+
+> 連接埠已經被佔了（例如被 UEBox）？給編輯器換一個，並在本側配合修改：
+> `UnrealEditor.exe MyProject.uproject -UALServer=ws://127.0.0.1:17861`
+
+### 步驟 2 — 把這個外掛裝進 DSH
+
+```bash
+git clone <this-repo> dsh-unreal-agentlink
+cd dsh-unreal-agentlink
+npm install
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+```
+
+再往下走之前 `npm run check` 必須全綠 —— 它驗證原始碼與測試都能通過型別檢查、行為測試全過，以及 170 條命令的目錄與 C++ 註冊表逐條對齊。
+
+接著把它登記為 DSH bundle。`package.json` 宣告 `dsh.bundle.patch: ./cordis.patch.yml`，而那個檔案只做一件事：
+
+```yaml
+- insert:
+    - id: unreal-agentlink
+      name: dsh-unreal-agentlink
+```
+
+> **配置分層**：後一層會**整體替換**該行的 `config`，而不是深合併。要覆寫任何內容，必須把想保留的鍵全部重寫一遍。
+
+DSH 沒有附帶任何安裝本機 out-of-tree 外掛的指令，而 `dsh plugin --profile desktop` 會被直接拒絕，因為 Electron 應用程式獨佔管理該 profile（`bin.js:38`）。因此本倉庫附帶了一個安裝程式，它做完這件事之後就把接下來交給真正的安裝器：
+
+```bash
+npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
+node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
+```
+
+它會拒絕 `desktop` profile、拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成（`dsh --profile web --dump-config` 必須包含 `# == dsh-unreal-agentlink`）。如果 peer dependency 守衛擋下了安裝，它會印出接受風險的確切指令 —— **那個決定是你的，不是腳本的**。
+
+另外還有兩條路，兩邊都寫出來了：下面的[不使用指令碼的手動安裝](#不使用指令碼的手動安裝)，以及 [INSTALL-ai.md](../zh-TW/INSTALL-ai.md) —— 一個 AI agent 能讀並逐步照做的版本。
+
+### 步驟 3 — 開啟專案並確認
+
+開啟 UE 專案，然後請 agent 呼叫 `ual_status`，檢查三個欄位：
+
+```
+listening: true
+url: ws://127.0.0.1:17860
+editors: [ { sessionId: "ue-xxxxxxxx", project: "MyProject", ... } ]
+```
+
+- `listening: false` → 外掛沒啟動，或連接埠被佔。在 DSH 日誌裡找 `EADDRINUSE`。
+- `listening: true` 但 `editors: []` → 橋接在等編輯器。確認 UE 專案已開啟、UnrealAgentLink 已啟用。
+
+編輯器連上後的**第一瞬間**，它的記錄裡只有 `sessionId` / `connectedAt` / `lastSeenAt` / `heartbeats` / `stale`；像 `project` 這樣的欄位要等編輯器推來 `project.info` 之後才會出現。那是正常狀態，不是錯誤。
+
+接著試一個無副作用的純讀取：
+
+```
+ual_call { method: "level.get_current" }
+```
+
+**完整走過一遍 —— 工作流程、怎麼讀失敗、疑難排解 —— 都在[教學](../zh-TW/01-tutorial.md)。**
 
 ---
 
@@ -51,18 +123,40 @@ UEBox 桌面版**不是依賴**。它只是同一廠商的另一個用戶端，�
 
 ---
 
-## 快速開始
+## 不使用指令碼的手動安裝
+
+上面的指令碼只是個方便；底層機制是四行 manifest 加上一條產品指令。其中 `<profile>` 是 `web`（或任何非 desktop 的 profile），`$DSH_HOME` 預設是 `~/.dsh`：
 
 ```bash
-npm install
-npm run check      # typecheck (src + tests) + 162 tests + catalog reconciliation, one command
+# 1. 先建置一次，然後只複製 npm pack 會出貨的東西
+npm run build
+cp -r lib cordis.patch.yml package.json LICENSE README.md \
+      "$DSH_HOME/profiles/<profile>/.vendor/"
+
+# 2. 登記依賴與 bundle 層（兩者都是必需的）
+"$DSH_HOME/profiles/<profile>/package.json"    # add the two entries shown below
+
+# 3. 讓真正的安裝器跑起來
+dsh plugin --profile <profile> install
+
+# 4. 證明 layer 已被合成
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 ```
 
-作為 DSH bundle 安裝：`package.json` 宣告 `dsh.bundle.patch`，`cordis.patch.yml` 依發佈包名插入一行 —— `{id: unreal-agentlink, name: dsh-unreal-agentlink}`。
+那兩筆登記，在 `<profile>/package.json` 裡：
 
-> **配置分層**：後一層會**整體替換**該行的 `config`，而不是深合併。要覆寫任何內容，必須把想保留的鍵全部重寫一遍。
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
 
-**端到端路徑見 [教學](../zh-TW/01-tutorial.md)** —— UE 側安裝、第一次連通、常見工作流程、出錯怎麼讀。
+兩者都是必需的，而且失敗的方式不同：被列出的套件若沒有宣告 `dsh.bundle`，會在開機時**大聲失敗**；而裝了卻沒被列出的套件**完全不貢獻任何 layer**，`--dump-config` 裡什麼都不會出現。
+
+**為什麼 `file:` 指向一份複本，而不是你的工作區**：pnpm 在安裝時會複製它找到的東西，所以一個存到一半的原始檔 —— 或建置失敗後被刪掉的 `lib/` —— 會變成 DSH 載入的那個外掛。先鏡像，再安裝。
+
+**`desktop` profile 沒有 CLI 路徑。** `bin.js:38` 會拒絕它，因為 Electron 應用程式獨佔管理它，而那個應用程式在執行期間會對 `desktop/package.json` 持有一個 `wx` 鎖（`dsh-atomic-write`，而競爭者永不刪除另一個持有者的鎖）。你的選項是 GUI 自己的外掛管理器，或者關掉應用程式後手動做上面四步。先裝進 `web` 再把結果複製過去，是最不侵入的做法。
+
+> 上面的步驟 2 已經用一條命令完成了這件事 —— 你只在需要自己控制每一步時才走這條路。
 
 ---
 
@@ -74,8 +168,9 @@ npm run check      # typecheck (src + tests) + 162 tests + catalog reconciliatio
 | [協議參考](../zh-TW/02-protocol.md) | 訊息結構、事件、13 個狀態碼、序列化規則、逾時與並發語義 |
 | [架構](../zh-TW/03-architecture.md) | 閘門鏈、工作階段隔離與復原、錯誤翻譯、驗證策略、踩過的坑 |
 | [命令參考](../zh-TW/command-reference.md) | 170 條命令的參數／必填鍵／結果鍵／狀態碼（**自動產生**） |
+| [安裝指南（AI 可讀）](../zh-TW/INSTALL-ai.md) | 寫給 AI agent 讀並執行的安裝程序，並附上它前後必須執行的檢查 |
 
-以上四份在頂部列出的每種語言下都有對應版本，位於 `docs/<lang>/` —— `en`（正式版，直接放在 `docs/` 下）、`zh`、`zh-TW`、`ja`、`ko`、`de`、`es`、`fr`、`ru`。
+以上五份在頂部列出的每種語言下都有對應版本，位於 `docs/<lang>/` —— `en`（正式版，直接放在 `docs/` 下）、`zh`、`zh-TW`、`ja`、`ko`、`de`、`es`、`fr`、`ru`。
 
 > 只有**散文**會被翻譯。命令名、參數鍵、結果鍵、狀態碼、配置鍵與 C++ 行號參考在所有語言中一律逐字保留 —— 因為 UE 會靜默忽略它不認識的鍵，把 `asset_path` 翻譯成別的名字只會得到一個靜默失效的鍵，而不是本地化。`tests/i18n.test.ts` 強制執行讓這套做法可維護的幾個不變式：每種語言都有自己的檔案、每個語言切換列都列出所有語言、每個內部連結與 `#anchor` 都能解析。最後一條特別重要，因為錨點是從**譯文標題**推導出來的 —— 改寫一個標題就會無聲地破壞所有指向它的連結。
 
@@ -163,9 +258,11 @@ src/
   resilience/breaker.ts     Rate limiter + circuit breaker
   sessions/state.ts         Session ledger / LIFO test / lock merging / cache / log filtering
   tools/                    The 12 tools
-scripts/                    Catalog extraction and reconciliation, doc generation, language set
-docs/                       Tutorial / protocol / architecture / command reference, in 9 languages
-tests/                      162 tests
+scripts/                    目錄擷取與對帳、文件產生與正規化、
+                             語言集合，以及 DSH profile 安裝程式
+docs/                       教學／協定／架構／指令參考／安裝指南，
+                             共 9 種語言
+tests/                      173 tests
 ```
 
 ### 產生物：請勿手動修改
@@ -182,8 +279,8 @@ npm run build && node scripts/gen-docs.mjs                             # rebuild
 ### 測試與檢查
 
 ```bash
-npm run check                       # typecheck (src + tests) + 162 passed + catalog + doc reconciliation
-npm test                            # 162 passed
+npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
+npm test                            # 173 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date
 ```

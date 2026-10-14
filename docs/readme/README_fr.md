@@ -13,7 +13,7 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 (plans, decides)            (this plugin: server, translator)   editor dials out
 ```
 
-[Prérequis](#prérequis) · [Démarrage rapide](#démarrage-rapide) · [12 outils](#12-outils) · [Configuration](#configuration) · [Documentation](#documentation)
+[Installation](#installation) · [Prérequis](#prérequis) · [12 outils](#12-outils) · [Configuration](#configuration) · [Documentation](#documentation)
 
 <code>npm install &amp;&amp; npm run check</code>
 
@@ -24,6 +24,78 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 Votre agent sait déjà lire des fichiers et exécuter des commandes. Ce plugin lui donne l'éditeur lui-même : interroger le niveau, faire apparaître des acteurs, modifier des blueprints et des matériaux, rendre des séquences, prendre des captures d'écran qu'il peut réellement *voir*, et annuler son propre travail quand quelque chose tourne mal.
 
 Il ne planifie **pas** les tâches. La planification appartient à l'agent natif de DSH. Ce plugin est un traducteur doté d'une couche de sécurité — il transforme l'intention de l'agent en commandes UnrealAgentLink, et les réponses de l'éditeur en quelque chose sur quoi l'agent peut agir.
+
+---
+
+## Installation
+
+Trois parties : mettre le plugin C++ UnrealAgentLink dans votre projet UE, installer ce plugin dans DSH, et ouvrir l'éditeur. C'est tout — **pas d'UEBox, pas de jeton, pas de handshake**.
+
+### Étape 1 — installer UnrealAgentLink dans le projet UE
+
+1. Copiez tout le répertoire `UnrealAgentLink` dans le `Plugins/` de votre projet (ou le `Plugins/` du moteur pour une installation globale).
+2. Régénérez les fichiers de projet, puis ouvrez le projet.
+3. Confirmez qu'UnrealAgentLink est activé sous **Edit → Plugins**. Il embarque automatiquement deux dépendances fournies par le moteur, `IKRig` et `PythonScriptPlugin`.
+
+À partir de là, l'éditeur se connecte de lui-même : `StartupModule` appelle sans condition `Init("ws://127.0.0.1:17860")` et réessaie toutes les 5 secondes, donc **l'ordre de démarrage n'a pas d'importance**.
+
+> Le port est déjà pris (par exemple par UEBox) ? Donnez-en un autre à l'éditeur et faites correspondre de ce côté :
+> `UnrealEditor.exe MyProject.uproject -UALServer=ws://127.0.0.1:17861`
+
+### Étape 2 — installer ce plugin dans DSH
+
+```bash
+git clone <this-repo> dsh-unreal-agentlink
+cd dsh-unreal-agentlink
+npm install
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+```
+
+`npm run check` doit être entièrement vert avant d'aller plus loin — il vérifie que les sources et les tests compilent, que les tests de comportement passent, et que le catalogue des 170 commandes s'aligne sur le registre C++, entrée par entrée.
+
+Puis enregistrez-le comme bundle DSH. `package.json` déclare `dsh.bundle.patch: ./cordis.patch.yml`, et ce fichier ne fait qu'une chose :
+
+```yaml
+- insert:
+    - id: unreal-agentlink
+      name: dsh-unreal-agentlink
+```
+
+> **Empilement de configuration** : une couche ultérieure **remplace** entièrement le `config` de cette ligne au lieu de le fusionner en profondeur. Pour surcharger quoi que ce soit, réécrivez toutes les clés que vous voulez conserver.
+
+DSH ne fournit aucune commande qui installe un plugin local hors arbre, et `dsh plugin --profile desktop` est refusé d'emblée parce que l'application Electron gère ce profil exclusivement (`bin.js:38`). Ce dépôt fournit donc un programme d'installation qui fait le travail puis s'efface devant le vrai :
+
+```bash
+npm run status:dsh -- --profile web     # ce qui est enregistré à l'instant (même script, passthrough npm)
+node scripts/install-dsh-plugin.mjs --profile web             # miroir, modifier le manifeste, installer, vérifier
+```
+
+Il refuse le profil `desktop`, refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès (`dsh --profile web --dump-config` doit contenir `# == dsh-unreal-agentlink`). Si le garde de peer-dependencies arrête l'installation, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
+
+Deux autres chemins, tous deux écrits : l'[installation manuelle](#installation-manuelle-sans-le-script) ci-dessous, et [INSTALL-ai.md](../fr/INSTALL-ai.md) — une version qu'un agent IA peut lire et suivre étape par étape.
+
+### Étape 3 — ouvrir le projet et vérifier
+
+Ouvrez le projet UE, puis faites appeler `ual_status` par l'agent et vérifiez trois champs :
+
+```
+listening: true
+url: ws://127.0.0.1:17860
+editors: [ { sessionId: "ue-xxxxxxxx", project: "MyProject", ... } ]
+```
+
+- `listening: false` → le plugin n'a pas démarré, ou le port est pris. Cherchez `EADDRINUSE` dans le log DSH.
+- `listening: true` mais `editors: []` → le pont attend. Confirmez que le projet UE est ouvert et qu'UnrealAgentLink est activé.
+
+Pendant le **premier instant** après la connexion d'un éditeur, son enregistrement ne contient que `sessionId` / `connectedAt` / `lastSeenAt` / `heartbeats` / `stale` ; des champs comme `project` n'apparaissent qu'une fois que l'éditeur a poussé `project.info`. C'est un état normal, pas une erreur.
+
+Puis essayez une lecture pure sans effet de bord :
+
+```
+ual_call { method: "level.get_current" }
+```
+
+**Le parcours complet — flux de travail, lecture des échecs, dépannage — est dans le [tutoriel](../fr/01-tutorial.md).**
 
 ---
 
@@ -51,18 +123,38 @@ Une fois le plugin dans votre projet, il fonctionne seul : `StartupModule` appel
 
 ---
 
-## Démarrage rapide
+### Installation manuelle sans le script
+
+Le script ci-dessus est une commodité ; le mécanisme sous-jacent tient en quatre lignes de manifeste plus une commande produit. Où `<profile>` est `web` (ou n'importe quel profil non-desktop) et `$DSH_HOME` est `~/.dsh` par défaut :
 
 ```bash
-npm install
-npm run check      # typecheck (src + tests) + 154 tests + catalog reconciliation, one command
+# 1. construire une fois, puis ne copier que ce que npm pack embarque
+npm run build
+cp -r lib cordis.patch.yml package.json LICENSE README.md \
+      "$DSH_HOME/profiles/<profile>/.vendor/"
+
+# 2. enregistrer la dépendance et la couche de bundle (les deux sont requises)
+"$DSH_HOME/profiles/<profile>/package.json"    # ajouter les deux entrées montrées ci-dessous
+
+# 3. laisser le vrai programme d'installation s'exécuter
+dsh plugin --profile <profile> install
+
+# 4. prouver que la couche est composée
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 ```
 
-Pour l'installer comme bundle DSH : `package.json` déclare `dsh.bundle.patch`, et `cordis.patch.yml` insère une ligne par nom de paquet publié — `{id: unreal-agentlink, name: dsh-unreal-agentlink}`.
+Les deux entrées, dans `<profile>/package.json` :
 
-> **Empilement de configuration** : une couche ultérieure **remplace** entièrement le `config` de cette ligne au lieu de le fusionner en profondeur. Pour surcharger quoi que ce soit, réécrivez toutes les clés que vous voulez conserver.
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
 
-**Pour le chemin de bout en bout, voir le [tutoriel](../fr/01-tutorial.md)** — installation côté UE, première connexion, flux de travail courants, et comment lire les échecs.
+Les deux sont obligatoires et échouent différemment : un paquet listé qui ne déclare aucun `dsh.bundle` échoue **bruyamment** au démarrage, tandis qu'un paquet installé qui n'est pas listé ne contribue **à aucune couche** et rien n'apparaît dans `--dump-config`.
+
+**Pourquoi `file:` pointe sur une copie et non sur votre espace de travail** : pnpm copie ce qu'il trouve au moment de l'installation, donc un fichier source à moitié enregistré — ou un `lib/` supprimé après un build raté — devient le plugin que DSH charge. Miroir d'abord, installation ensuite.
+
+**Le profil `desktop` n'a pas de chemin CLI.** `bin.js:38` le rejette parce que l'application Electron le gère exclusivement, et cette application détient un verrou `wx` sur `desktop/package.json` pendant qu'elle tourne (`dsh-atomic-write`, et un concurrent ne supprime jamais le verrou d'un autre détenteur). Vos options sont le gestionnaire de plugins de l'interface graphique, ou fermer l'application et faire les quatre étapes ci-dessus à la main. Installer d'abord dans `web` puis copier le résultat par-dessus est la voie la moins invasive.
 
 ---
 
@@ -74,8 +166,9 @@ Pour l'installer comme bundle DSH : `package.json` déclare `dsh.bundle.patch`, 
 | [Référence du protocole](../fr/02-protocol.md) | Formes des messages, événements, les 13 codes d'état, règles de sérialisation, sémantique des délais et de la concurrence |
 | [Architecture](../fr/03-architecture.md) | La chaîne de contrôles, l'isolation des sessions et le retour arrière, la traduction des erreurs, la stratégie de vérification, les pièges rencontrés |
 | [Référence des commandes](../fr/command-reference.md) | Paramètres / clés requises / clés de résultat / codes d'état pour les 170 commandes (**généré**) |
+| [Guide d'installation (lisible par IA)](../fr/INSTALL-ai.md) | La procédure d'installation écrite pour qu'un agent IA la lise et l'exécute, avec les vérifications qu'il doit lancer avant et après |
 
-Les quatre sont disponibles dans chaque langue listée en haut de ce fichier, sous `docs/<lang>/`.
+Les cinq existent dans chaque langue listée en haut de ce fichier, sous `docs/<lang>/` — `en` (canonique, directement dans `docs/`), `zh`, `zh-TW`, `ja`, `ko`, `de`, `es`, `fr`, `ru`.
 
 ---
 
@@ -161,18 +254,20 @@ src/
   resilience/breaker.ts     Rate limiter + circuit breaker
   sessions/state.ts         Session ledger / LIFO test / lock merging / cache / log filtering
   tools/                    The 12 tools
-scripts/                    Catalog extraction and reconciliation, doc generation
-docs/                       Tutorial / protocol / architecture / command reference
-tests/                      154 tests
+scripts/                    Extraction et réconciliation du catalogue, génération et normalisation des documents,
+                            le jeu de langues, et le programme d'installation de profils DSH
+docs/                       Tutoriel / protocole / architecture / référence des commandes / guide d'installation,
+                            en 9 langues
+tests/                      173 tests
 ```
 
 ### Fichiers générés : ne pas modifier à la main
 
-`src/catalog/method-data.ts` et `docs/command-reference.md` sont tous deux **générés** :
+`src/catalog/method-data.ts` et `docs/<lang>/command-reference.md` sont tous deux **générés** :
 
 ```bash
 node scripts/extract-methods.mjs .ua-ref/plugin/UnrealAgentLink/Source   # rebuild the catalog from C++
-npm run build && node scripts/gen-docs.mjs                             # rebuild the command reference
+npm run build && node scripts/gen-docs.mjs                             # rebuild the command reference (all 9 languages)
 ```
 
 Une table maintenue à la main que personne n'importe est une classe de défauts récurrente dans ce projet (`REQUIRED_KEYS`, `EXTRA_PARAM_KEYS` et `UAL_CODES` en ont tous été victimes). La contre-mesure est de faire **demander à la source** à chaque contrôle, plutôt qu'à la table — voir [architecture §9](../fr/03-architecture.md#9-fichiers-générés-et-tables-jamais-importées).
@@ -180,13 +275,17 @@ Une table maintenue à la main que personne n'importe est une classe de défauts
 ### Tests et contrôles
 
 ```bash
-npm run check                       # typecheck (src + tests) + 154 passed + catalog reconciliation
-npm test                            # 154 passed
+npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
+npm test                            # 173 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
-node scripts/gen-docs.mjs --check   # is the command reference up to date
+node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
+node scripts/normalize-doc-headers.mjs --check   # are the language bars canonical in all 54 files
+node scripts/normalize-doc-links.mjs --check     # do the body links resolve from where they sit
+npm run docs                        # regenerate + rewrite the 54 doc headers and links
+npm run install:dsh -- --profile web    # register this plugin with a dsh profile (see Installation)
 ```
 
-Les sept fichiers de tests sont divisés selon **le type de défaut qu'ils peuvent détecter**, chacun pour une raison — voir [architecture §11](../fr/03-architecture.md#11-stratégie-de-vérification).
+Les neuf fichiers de tests sont divisés selon **le type de défaut qu'ils peuvent détecter**, chacun pour une raison — voir [architecture §11](../fr/03-architecture.md#11-stratégie-de-vérification).
 
 `requires` n'est pas écrit à la main : il est dérivé des propres messages `SendError(..., 400, "Missing field: X")` des gestionnaires (28 sites), parce qu'une clé requise erronée fait rejeter par le pont un appel *valide* avant que le moteur ne le voie. Le résultat atterrit dans `method-data.ts` sous le nom `REQUIRED_KEYS`, et `requiresOf()` de `methods.ts` l'intègre à l'utilisation runtime (le rejet anticipé dans `service.call()`, la ligne `REQUIRED:` de `ual_schema` et les indices d'erreur passent tous par cette unique fonction).
 

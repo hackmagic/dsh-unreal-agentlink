@@ -32,7 +32,18 @@ src/
   errors/translate.ts   error classification (by class name / status code, not by text)
   resilience/breaker.ts rate limiter + circuit breaker
   sessions/state.ts     session ledger, LIFO test, lock merging, cache, log filtering
-  tools/                the 12 tools
+  tools/                die 12 Werkzeuge
+scripts/
+  extract-methods.mjs   extrahiert den Katalog aus dem C++ (erzeugt method-data.ts)
+  check-catalog.mjs     versöhnt den Katalog mit der C++-Registry, in beide Richtungen
+  gen-docs.mjs          rendert docs/<lang>/command-reference.md für alle 9 Sprachen
+  languages.mjs         die Sprachmenge — vom Generator und den Dokumentationstests geteilt
+  normalize-doc-headers.mjs  schreibt die Sprachleisten und Doc-Nav-Zeilen aus der Sprachmenge neu
+  normalize-doc-links.mjs    schreibt Body-Links neu, damit sie ausgehend von ihrer eigenen Datei auflösen
+  install-dsh-plugin.mjs     registriert dieses Plugin in einem dsh-Profil (Spiegel, Manifest, Installation, Prüfung)
+docs/                   Tutorial / Protokoll / Architektur / Befehlsreferenz / Installationsanleitung,
+                         ×9 Sprachen
+tests/                  173 Tests in 9 Dateien
 ```
 
 ### Abhängigkeitsrichtung
@@ -238,11 +249,15 @@ was gleichbedeutend ist mit:
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 154 tests
+vitest run                         # 173 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
+node scripts/gen-docs.mjs --check  # Befehlsreferenz in 9 Sprachen aktuell
+node scripts/normalize-doc-headers.mjs --check   # Sprachleisten in 54 Dateien kanonisch
+node scripts/normalize-doc-links.mjs --check     # Body-Links lösen ausgehend von ihrer Datei auf
+npm run install:dsh -- --profile web    # dieses Plugin in einem dsh-Profil registrieren
 ```
 
-Die Tests liegen in 7 Dateien, aufgeteilt nach **der Art des Defekts, den sie finden können**:
+Die Tests liegen in 9 Dateien, aufgeteilt nach **der Art des Defekts, den sie finden können**:
 
 | File | Covers |
 |---|---|
@@ -252,7 +267,9 @@ Die Tests liegen in 7 Dateien, aufgeteilt nach **der Art des Defekts, den sie fi
 | `catalog.test.ts` | Katalogabfragen, Prototyp-Ketten-Schutz, das Freigabe-Gate end to end |
 | `bridge.test.ts` | ein echter WebSocket: Warteschlangen, Timeout-Waisen, Ereignisse, Shutdown |
 | `tool-output.test.ts` | der echte Rückgabewert jedes Werkzeugs durch die zweistufige Pipeline |
+| `i18n.test.ts` | die Dokumentation ist vollständig und in sich konsistent, in allen 9 Sprachen |
 | `end-to-end.test.ts` | die echte Gate-Kette + ein echter Socket + echte Werkzeugschemas |
+| `installer.test.ts` | der DSH-Profil-Installer: Argumentverarbeitung, die zwei Manifest-Einträge, die Spiegel-Grenze, die Ablehnung bei Sperre |
 
 **Warum `end-to-end.test.ts` existieren muss**: Jeder andere Test stubbt eine Schicht aus. Der `REQUIRED_KEYS`-Fehler — generiert, dokumentiert, reviewed, nie importiert — wurde von keinem Unit-Test gefangen, weil jede Schicht isoliert in sich konsistent war. Nur die echte Gate-Kette an einen echten Socket zu hängen und sie einem echten Schema zu füttern legt **die Naht zwischen den Schichten** frei.
 

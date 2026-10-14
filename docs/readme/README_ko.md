@@ -13,7 +13,7 @@ DSH agent  ──도구 호출──►  dsh-unreal-agentlink  ◄──WebSocke
 (계획, 결정)               (이 플러그인: 서버, 번역기)   에디터가 먼저 연결
 ```
 
-[요구 사항](#요구-사항) · [빠른 시작](#빠른-시작) · [도구](#12개-도구) · [구성](#구성) · [문서](#문서)
+[설치](#설치) · [요구 사항](#요구-사항) · [12개 도구](#12개-도구) · [구성](#구성) · [문서](#문서)
 
 <code>npm install &amp;&amp; npm run check</code>
 
@@ -24,6 +24,111 @@ DSH agent  ──도구 호출──►  dsh-unreal-agentlink  ◄──WebSocke
 에이전트는 이미 파일을 읽고 명령을 실행할 수 있습니다. 이 플러그인은 거기에 **에디터 그 자체**를 더합니다. 레벨을 조회하고, actor를 스폰하고, 블루프린트와 머티리얼을 편집하고, 시퀀스를 렌더하고, 에이전트가 실제로 *볼* 수 있는 스크린샷을 찍고, 문제가 생기면 자신이 한 작업을 되돌립니다.
 
 이 플러그인은 작업을 **계획하지 않습니다**. 계획은 DSH의 네이티브 에이전트의 몫입니다. 이 플러그인은 안전 계층을 갖춘 번역기입니다 — 에이전트의 의도를 UnrealAgentLink 명령으로 바꾸고, 에디터의 응답을 에이전트가 그에 따라 행동할 수 있는 형태로 되돌립니다.
+
+---
+
+## 설치
+
+세 부분입니다: UnrealAgentLink C++ 플러그인을 UE 프로젝트에 넣고, 이 플러그인을 DSH에 설치하고, 에디터를 여는 것. 그것이 전부입니다 — **UEBox도, 토큰도, 핸드셰이크도 없습니다**.
+
+### 1단계 — UE 프로젝트에 UnrealAgentLink 설치하기
+
+1. `UnrealAgentLink` 디렉터리 전체를 프로젝트의 `Plugins/`에 복사합니다(글로벌 설치는 엔진 쪽 `Plugins/`).
+2. 프로젝트 파일을 재생성하고 프로젝트를 엽니다.
+3. **Edit → Plugins**에서 UnrealAgentLink가 활성화되어 있는지 확인합니다. 엔진 기본 제공 의존성 두 개, `IKRig`와 `PythonScriptPlugin`은 자동으로 함께 활성화됩니다.
+
+그 이후로는 에디터가 스스로 밖으로 연결을 겁니다: `StartupModule`이 `Init("ws://127.0.0.1:17860")`를 무조건 호출하고 5초마다 재시도하므로, **시작 순서는 문제가 되지 않습니다**.
+
+> 포트가 이미 쓰이고 있다면(예: UEBox가 쓰고 있을 때) 에디터에 다른 포트를 주고 이쪽도 맞추세요:
+> `UnrealEditor.exe MyProject.uproject -UALServer=ws://127.0.0.1:17861`
+
+### 2단계 — 이 플러그인을 DSH에 설치하기
+
+```bash
+git clone <this-repo> dsh-unreal-agentlink
+cd dsh-unreal-agentlink
+npm install
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+```
+
+더 나아가기 전에 `npm run check`가 완전히 초록이어야 합니다 — 소스와 테스트가 typecheck되는지, 동작 테스트가 통과하는지, 170개 명령 카탈로그가 C++ 레지스트리와 항목별로 들어맞는지를 검증합니다.
+
+그런 다음 DSH 번들로 등록합니다. `package.json`은 `dsh.bundle.patch: ./cordis.patch.yml`을 선언하고, 그 파일이 하는 일은 하나뿐입니다:
+
+```yaml
+- insert:
+    - id: unreal-agentlink
+      name: dsh-unreal-agentlink
+```
+
+> **구성 레이어링**: 뒤쪽 레이어가 해당 행의 `config`를 **전체 교체**하며 깊은 병합(deep-merge)을 하지 않습니다. 무엇이든 덮어쓰려면 유지하고 싶은 키를 전부 다시 써야 합니다.
+
+DSH에는 로컬의 트리 밖 플러그인을 설치하는 명령이 없고, `dsh plugin --profile desktop`은 Electron 앱이 그 프로파일을 독점하므로 완전히 거부됩니다(`bin.js:38`). 그래서 이 저장소는 그 일을 하고 나서 실제 설치기에 넘기는 설치기를 제공합니다:
+
+```bash
+npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
+node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
+```
+
+이 스크립트는 `desktop` 프로파일을 거부하고, 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명합니다(`dsh --profile web --dump-config`에 `# == dsh-unreal-agentlink`가 들어 있어야 함). 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력합니다 — **그 결정은 당신의 것이지 스크립트의 것이 아닙니다**.
+
+남은 두 경로도 모두 적혀 있습니다: 아래의 [스크립트 없이 수동 설치](#스크립트-없이-수동-설치), 그리고 [INSTALL-ai.md](../ko/INSTALL-ai.md) — AI 에이전트가 읽고 단계별로 따를 수 있는 버전.
+
+### 3단계 — 프로젝트를 열고 확인하기
+
+UE 프로젝트를 연 뒤, 에이전트에게 `ual_status`를 호출하게 하고 세 필드를 확인합니다:
+
+```
+listening: true
+url: ws://127.0.0.1:17860
+editors: [ { sessionId: "ue-xxxxxxxx", project: "MyProject", ... } ]
+```
+
+- `listening: false` → 플러그인이 시작되지 않았거나 포트가 쓰이고 있습니다. DSH 로그에서 `EADDRINUSE`를 찾으세요.
+- `listening: true`지만 `editors: []` → 브리지가 기다리는 중입니다. UE 프로젝트가 열려 있고 UnrealAgentLink가 활성화되어 있는지 확인하세요.
+
+에디터가 연결된 직후 **아주 잠깐**은 그 레코드에 `sessionId` / `connectedAt` / `lastSeenAt` / `heartbeats` / `stale`만 있고, `project` 같은 필드는 에디터가 `project.info`를 밀어 넣은 뒤에야 나타납니다. 이것은 정상 상태이지 오류가 아닙니다.
+
+그런 다음 부작용 없는 순수 읽기 하나를 시도합니다:
+
+```
+ual_call { method: "level.get_current" }
+```
+
+**작업 흐름 전체, 실패 읽기, 문제 해결은 [튜토리얼](../ko/01-tutorial.md)에 있습니다.**
+
+### 스크립트 없이 수동 설치
+
+위 스크립트는 편의를 위한 것이며, 실제 메커니즘은 네 줄의 manifest와 제품 명령 하나입니다. 여기서 `<profile>`은 `web`(또는 desktop이 아닌 어떤 프로파일)이고, `$DSH_HOME`은 기본적으로 `~/.dsh`입니다:
+
+```bash
+# 1. build once, then copy only what npm pack ships
+npm run build
+cp -r lib cordis.patch.yml package.json LICENSE README.md \
+      "$DSH_HOME/profiles/<profile>/.vendor/"
+
+# 2. register the dependency and the bundle layer (both are required)
+"$DSH_HOME/profiles/<profile>/package.json"    # add the two entries shown below
+
+# 3. let the real installer run
+dsh plugin --profile <profile> install
+
+# 4. prove the layer is composed
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+`<profile>/package.json`에 들어갈 두 항목:
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+둘 다 필수이며 실패 양식이 다릅니다: `dsh.bundle`을 선언하지 않는 패키지를 목록에 올리면 부팅 시 **크게** 실패하고, 설치했지만 목록에 없으면 레이어가 **전혀** 기여되지 않아 `--dump-config`에 아무것도 나타나지 않습니다.
+
+**`file:`가 워크스페이스가 아니라 복사본을 가리키는 이유**: pnpm은 설치 시점에 그곳에서 발견한 것을 복사하므로, 반쯤 저장된 소스 파일 — 또는 빌드 실패 후 지워진 `lib/` — 가 DSH가 로드하는 플러그인이 됩니다. 먼저 미러하고, 그다음 설치하세요.
+
+**`desktop` 프로파일에는 CLI 경로가 없습니다.** Electron 애플리케이션이 그것을 독점하므로 `bin.js:38`가 거부하고, 그 앱은 실행 중 `desktop/package.json`에 `wx` 락을 쥐고 있습니다(`dsh-atomic-write`, 그리고 경쟁자는 다른 소유자의 락을 절대 지우지 않습니다). 선택지는 GUI의 플러그인 관리자를 쓰거나, 앱을 닫고 위 네 단계를 손으로 하는 것입니다. `web`에 먼저 설치하고 결과를 복사하는 것이 가장 덜 침습적입니다.
 
 ---
 
@@ -51,21 +156,6 @@ UEBox 데스크톱 앱은 **의존성이 아닙니다**. 같은 제조사의 다
 
 ---
 
-## 빠른 시작
-
-```bash
-npm install
-npm run check      # typecheck (src + tests) + 154 tests + catalog reconciliation, one command
-```
-
-DSH 번들로 설치하려면: `package.json`이 `dsh.bundle.patch`를 선언하고, `cordis.patch.yml`이 배포 패키지 이름으로 한 줄을 삽입합니다 — `{id: unreal-agentlink, name: dsh-unreal-agentlink}`.
-
-> **구성 레이어링**: 뒤쪽 레이어가 해당 행의 `config`를 **전체 교체**하며 깊은 병합(deep-merge)을 하지 않습니다. 무엇이든 덮어쓰려면 유지하고 싶은 키를 전부 다시 써야 합니다.
-
-**엔드투엔드 경로는 [튜토리얼](../ko/01-tutorial.md)을 보세요** — UE 쪽 설치, 첫 연결, 자주 쓰는 작업 흐름, 실패를 읽는 방법.
-
----
-
 ## 문서
 
 | 문서 | 내용 |
@@ -74,8 +164,9 @@ DSH 번들로 설치하려면: `package.json`이 `dsh.bundle.patch`를 선언하
 | [프로토콜 레퍼런스](../ko/02-protocol.md) | 메시지 구조, 이벤트, 13개 상태 코드, 직렬화 규칙, 타임아웃과 동시성 의미 |
 | [아키텍처](../ko/03-architecture.md) | 게이트 체인, 세션 격리와 되돌리기, 오류 번역, 검증 전략, 우리가 겪은 함정 |
 | [명령 레퍼런스](../ko/command-reference.md) | 170개 명령 전체의 파라미터 / 필수 키 / 결과 키 / 상태 코드(**자동 생성**) |
+| [설치 가이드(AI 가독)](../ko/INSTALL-ai.md) | AI 에이전트가 읽고 실행하도록 쓴 설치 절차로, 설치 전후에 반드시 실행해야 할 점검과 함께 |
 
-위 네 문서 모두 이 파일 위쪽에 적힌 모든 언어로 제공되며, `docs/<lang>/` 아래에 있습니다.
+위 다섯 문서 모두 이 파일 위쪽에 적힌 모든 언어로 제공되며, `docs/<lang>/` 아래에 있습니다 — `en`(기준본, `docs/` 바로 아래), `zh`, `zh-TW`, `ja`, `ko`, `de`, `es`, `fr`, `ru`.
 
 ---
 
@@ -161,9 +252,11 @@ src/
   resilience/breaker.ts     Rate limiter + circuit breaker
   sessions/state.ts         Session ledger / LIFO test / lock merging / cache / log filtering
   tools/                    The 12 tools
-scripts/                    Catalog extraction and reconciliation, doc generation
-docs/                       Tutorial / protocol / architecture / command reference
-tests/                      154 tests
+scripts/                    Catalog extraction and reconciliation, doc generation and normalization,
+                              the language set, and the DSH profile installer
+docs/                       Tutorial / protocol / architecture / command reference / install guide,
+                              in 9 languages
+tests/                      173 tests
 ```
 
 ### 생성된 파일: 직접 수정 금지
@@ -180,8 +273,8 @@ npm run build && node scripts/gen-docs.mjs                             # rebuild
 ### 테스트와 점검
 
 ```bash
-npm run check                       # typecheck (src + tests) + 154 passed + catalog reconciliation
-npm test                            # 154 passed
+npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
+npm test                            # 173 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date
 ```

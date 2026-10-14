@@ -279,9 +279,9 @@ npm run check                       # typecheck (src + tests) + 173 passed + cat
 npm test                            # 173 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
-node scripts/normalize-doc-headers.mjs --check   # are the language bars canonical in all 45 files
+node scripts/normalize-doc-headers.mjs --check   # are the language bars canonical in all 54 files
 node scripts/normalize-doc-links.mjs --check     # do the body links resolve from where they sit
-npm run docs                        # regenerate + rewrite the 45 doc headers and links
+npm run docs                        # regenerate + rewrite the 54 doc headers and links
 npm run install:dsh -- --profile web    # register this plugin with a dsh profile (see Installation)
 ```
 

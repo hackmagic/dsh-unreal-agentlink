@@ -62,7 +62,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 154 tests + catalog reconciliation, one command
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
 ```
 
 往下走之前，`npm run check` 必須全綠。它驗證三件事：原始碼與測試都能通過型別檢查、行為測試全過、170 條命令的目錄與 C++ 註冊表逐條對齊。
@@ -78,6 +78,52 @@ npm run check      # typecheck + 154 tests + catalog reconciliation, one command
 ```
 
 **注意**：DSH 的配置分層中，後一層會**整體替換**這一行的 `config`，而不是深合併。要覆寫任何一個鍵，必須把想保留的鍵全部重寫一遍。
+
+#### 使用安裝指令碼
+
+DSH 自己**沒有**安裝本機 out-of-tree 外掛的指令 —— `dsh plugin --profile desktop` 會被直接拒絕，因為 Electron 應用程式獨佔管理該 profile（`bin.js:38`）。本倉庫因此附帶了一個安裝程式，它做好前置工作之後就把接下來的安裝交給真正的安裝器：
+
+```bash
+npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
+node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
+```
+
+它會拒絕 `desktop` profile、拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成（`dsh --profile web --dump-config` 必須包含 `# == dsh-unreal-agentlink`）。它還會核對 peer dependency —— 只有一個確定的 DSH 版本被宣告可以載入本外掛，所以一個明顯不相容的執行環境會被 `allow-version` 放行，而不是被悄悄忽略。如果守衛擋下了安裝，它會印出接受風險的確切指令（`--accept-risk`）；**那個決定是你的，不是腳本的**。
+
+#### 手動安裝
+
+上面的指令碼只是個方便；底層機制是四步 manifest 編輯加上一條產品指令。其中 `<profile>` 是 `web`（或任何非 desktop 的 profile），`$DSH_HOME` 預設是 `~/.dsh`：
+
+```bash
+# 1. 先建置一次，然後只複製 npm pack 會出貨的東西
+npm run build
+cp -r lib cordis.patch.yml package.json LICENSE README.md \
+      "$DSH_HOME/profiles/<profile>/.vendor/"
+
+# 2. 登記依賴與 bundle 層（兩者都是必需的）
+"$DSH_HOME/profiles/<profile>/package.json"    # add the two entries shown below
+
+# 3. 讓真正的安裝器跑起來
+dsh plugin --profile <profile> install
+
+# 4. 證明 layer 已被合成
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+那兩筆登記，在 `<profile>/package.json` 裡：
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+兩者都是必需的，而且失敗的方式不同：被列出的套件若沒有宣告 `dsh.bundle`，會在開機時**大聲失敗**；而裝了卻沒被列出的套件**完全不貢獻任何 layer**，`--dump-config` 裡什麼都不會出現。
+
+**為什麼 `file:` 指向一份複本，而不是你的工作區**：pnpm 在安裝時會複製它找到的東西，所以一個存到一半的原始檔 —— 或建置失敗後被刪掉的 `lib/` —— 會變成 DSH 載入的那個外掛。先鏡像，再安裝。
+
+**`desktop` profile 沒有 CLI 路徑。** `bin.js:38` 會拒絕它，因為 Electron 應用程式獨佔管理它，而那個應用程式在執行期間會對 `desktop/package.json` 持有一個 `wx` 鎖（`dsh-atomic-write`，而競爭者永不刪除另一個持有者的鎖）。你的選項是 GUI 自己的外掛管理器，或者關掉應用程式後手動做上面四步。先裝進 `web` 再把結果複製過去，是最不侵入的做法。
+
+如果你是在讓一個 AI agent 做這件事，把 [INSTALL-ai.md](INSTALL-ai.md) 給它 —— 那是一份機器可讀的逐步程序，連失敗時的讀法都寫在裡面。
 
 ---
 

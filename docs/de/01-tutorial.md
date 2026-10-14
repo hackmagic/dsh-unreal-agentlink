@@ -62,7 +62,7 @@ Das Plugin aktiviert seine beiden engine-eigenen Abhängigkeiten `IKRig` und `Py
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 154 tests + catalog reconciliation, one command
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
 ```
 
 `npm run check` muss vollständig grün sein, bevor es weitergeht. Es prüft drei Dinge: Quellen und Tests typechecken beide, alle Verhaltenstests laufen durch, und der 170-Befehle-Katalog passt Eintrag für Eintrag zur C++-Registry.
@@ -78,6 +78,41 @@ npm run check      # typecheck + 154 tests + catalog reconciliation, one command
 ```
 
 **Hinweis**: In DSHs Konfigurationsschichtung **ersetzt** eine spätere Schicht die `config` dieser Zeile vollständig, statt sie tief zusammenzuführen. Um einen Schlüssel zu überschreiben, müssen Sie jeden Schlüssel, den Sie behalten wollen, neu schreiben.
+
+#### Mit dem Installationsskript
+
+DSH liefert keinen Befehl, der ein lokales Plugin außerhalb des Baumes installiert, und `dsh plugin --profile desktop` wird rundweg abgewiesen, weil die Electron-App dieses Profil exklusiv verwaltet (`bin.js:38`). Dieses Repository liefert daher eines:
+
+```bash
+npm run status:dsh -- --profile web   # was gerade registriert ist (npm-Passthrough)
+node scripts/install-dsh-plugin.mjs --profile web            # spiegeln, Manifest bearbeiten, installieren, prüfen
+```
+
+Es verweigert das Profil `desktop`, verweigert das Anfassen eines Manifests, das ein laufendes DSH noch hält, und beweist, dass die Schicht zusammengesetzt ist, bevor es Erfolg meldet. Stoppt die Peer-Dependency-Wache die Installation, gibt es den genauen Befehl aus, um das Risiko zu akzeptieren — **diese Entscheidung ist Ihre, nicht die des Skripts**.
+
+#### Von Hand
+
+Der zugrunde liegende Mechanismus besteht aus vier Schritten. Dabei ist `<profile>` gleich `web` (oder ein beliebiges Nicht-desktop-Profil):
+
+```bash
+npm run build    # der Spiegel liefert lib/ aus, und ein vor dem Build erstellter Spiegel ist ein Teil-Plugin
+cp -r lib cordis.patch.yml package.json LICENSE README.md "$DSH_HOME/profiles/<profile>/.vendor/"
+dsh plugin --profile <profile> install
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+plus zwei Einträgen in `<profile>/package.json`:
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+Beide sind verpflichtend, und sie scheitern unterschiedlich: ein aufgelistetes Paket, das kein `dsh.bundle` deklariert, scheitert beim Start **laut**, während ein installiertes Paket, das nicht aufgelistet ist, **überhaupt keine Schicht** beisteuert. Und `file:` muss auf eine Kopie zeigen, nicht auf Ihren Arbeitsbereich — pnpm kopiert, was es zum Installationszeitpunkt vorfindet, also wird eine halb gespeicherte Quelldatei zu dem Plugin, das DSH lädt.
+
+Das Profil `desktop` hat keinen CLI-Weg: die Electron-App hält eine Sperre auf ihr `package.json`, während sie läuft, und ein Konkurrent löscht niemals die Sperre eines anderen Halters. Nutzen Sie den Plugin-Manager der GUI, oder schließen Sie die App zuerst.
+
+Falls ein KI-Agent die Installation ausführt, geben Sie ihm stattdessen [INSTALL-ai.md](INSTALL-ai.md) — es ist dieselbe Prozedur, geschrieben als Checkliste, die er lesen und prüfen kann.
 
 ---
 

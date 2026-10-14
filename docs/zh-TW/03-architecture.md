@@ -38,8 +38,8 @@ scripts/
   check-catalog.mjs     reconciles catalog against the C++ registry, both directions
   gen-docs.mjs          renders docs/<lang>/command-reference.md for all 9 languages
   languages.mjs         the language set — shared by the generator and the docs tests
-docs/                   tutorial / protocol / architecture / command reference, ×9 languages
-tests/                  162 tests in 8 files
+docs/                   tutorial / protocol / architecture / command reference / install guide, ×9 languages
+tests/                  173 tests in 9 files
 ```
 
 ### 依賴方向
@@ -248,11 +248,15 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 154 tests
+vitest run                         # 173 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
+node scripts/gen-docs.mjs --check  # command reference current in 9 languages
+node scripts/normalize-doc-headers.mjs --check   # language bars canonical in 54 files
+node scripts/normalize-doc-links.mjs --check     # body links resolve from where they sit
+npm run install:dsh -- --profile web    # register this plugin with a dsh profile
 ```
 
-測試分布在 8 個檔案裡，按**它們能發現哪一類缺陷**劃分：
+測試分布在 9 個檔案裡，按**它們能發現哪一類缺陷**劃分：
 
 | 檔案 | 覆蓋範圍 |
 |---|---|
@@ -264,12 +268,13 @@ node scripts/check-catalog.mjs     # 4 reconciliation checks
 | `tool-output.test.ts` | 每個工具的真實回傳值走完整條兩段式管線 |
 | `i18n.test.ts` | 9 種語言下文件都完整且內部自洽 |
 | `end-to-end.test.ts` | 真實閘門鏈 + 真實 socket + 真實工具 schema |
+| `installer.test.ts` | DSH profile 安裝程式：引數處理、兩筆 manifest 條目、鏡像邊界、拒絕持鎖 |
 
 **為什麼 `end-to-end.test.ts` 必須存在**：其他每個測試都會把某一層打成樁。`REQUIRED_KEYS` 這個 bug —— 有產生、有文件、經過審視、卻從未被 import —— 沒有任何單元測試抓到它，因為每一層孤立地看都是自洽的。只有把真實閘門鏈接到真實 socket 上、再餵給真實 schema，才能暴露**層與層之間的接縫**。
 
 同理，`tool-output.test.ts` 用的是**真的** `snapshotJsonValue` + `validateJsonSchemaValue`，而不是自己寫一套 schema 檢查 —— 否則 `ual_status` 的 `undefined` 缺陷會以同樣的方式溜過去。
 
-`i18n.test.ts` 出於同樣的理由，針對的是另一道接縫。`src/` 底下的一切對 `docs/` 一無所知，所以現有測試無法發現某份翻譯檔在切換列裡漏了一種語言、或指向了一個已被改名的標題。它改成把文件當資料讀：每種語言都有那四個檔案，每一列都列出全部九種語言且只把自己的那份加粗，每一個相對連結都能解析到真實檔案，每一個 `#anchor` 都能解析到真實標題。最後一項才是真正有意思的 —— 錨點是從*譯文*標題文字推導出來的，所以翻譯者一旦改寫「Verification strategy」，指向該節的每一個連結都會靜默失效，而且沒有任何地方會報錯。`gen-docs.mjs --check` 以同樣的方式守著產生出來的命令參考；`i18n.test.ts` 是呼叫它，而不是重新實作一次渲染。
+`i18n.test.ts` 出於同樣的理由，針對的是另一道接縫。`src/` 底下的一切對 `docs/` 一無所知，所以現有測試無法發現某份翻譯檔在切換列裡漏了一種語言、或指向了一個已被改名的標題。它改成把文件當資料讀：每種語言都有那五個檔案，每一列都列出全部九種語言且只把自己的那份加粗，每一個相對連結都能解析到真實檔案，每一個 `#anchor` 都能解析到真實標題。最後一項才是真正有意思的 —— 錨點是從*譯文*標題文字推導出來的，所以翻譯者一旦改寫「Verification strategy」，指向該節的每一個連結都會靜默失效，而且沒有任何地方會報錯。`gen-docs.mjs --check` 以同樣的方式守著產生出來的命令參考；`i18n.test.ts` 是呼叫它，而不是重新實作一次渲染。
 
 ---
 

@@ -2,7 +2,7 @@
 
 [English](../01-tutorial.md) · [简体中文](../zh/01-tutorial.md) · [繁體中文](../zh-TW/01-tutorial.md) · [日本語](../ja/01-tutorial.md) · **한국어** · [Deutsch](../de/01-tutorial.md) · [Español](../es/01-tutorial.md) · [Français](../fr/01-tutorial.md) · [Русский](../ru/01-tutorial.md)
 
-[README](../readme/README_ko.md) · **튜토리얼** · [프로토콜](02-protocol.md) · [아키텍처](03-architecture.md) · [명령 참조](command-reference.md)
+[README](../readme/README_ko.md) · **튜토리얼** · [프로토콜](02-protocol.md) · [아키텍처](03-architecture.md) · [명령 참조](command-reference.md) · [설치 가이드](INSTALL-ai.md)
 
 </div>
 
@@ -62,7 +62,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 154 tests + catalog reconciliation, one command
+npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
 ```
 
 `npm run check`는 더 나아가기 전에 완전히 초록이어야 한다. 세 가지를 검증한다: 소스와 테스트가 모두 typecheck되고, 동작 테스트가 모두 통과하고, 170개 명령 카탈로그가 C++ 레지스트리와 항목별로 들어맞는다.
@@ -78,6 +78,41 @@ npm run check      # typecheck + 154 tests + catalog reconciliation, one command
 ```
 
 **참고**: DSH의 설정 레이어링에서 뒤에 오는 레이어는 이 행의 `config`를 deep-merge하지 않고 **통째로 교체**한다. 어떤 키든 override하려면 유지하고 싶은 키를 모두 다시 써야 한다.
+
+#### 설치 스크립트 사용하기
+
+DSH에는 로컬의 트리 밖 플러그인을 설치하는 명령이 없고, `dsh plugin --profile desktop`은 Electron 앱이 그 프로파일을 독점하므로 완전히 거부된다(`bin.js:38`). 그래서 이 저장소가 그 일을 하는 스크립트를 제공한다:
+
+```bash
+npm run status:dsh -- --profile web   # what is registered right now (npm passthrough)
+node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
+```
+
+이 스크립트는 `desktop` 프로파일을 거부하고, 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명한다. 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력한다 — **그 결정은 당신의 것이지 스크립트의 것이 아니다**.
+
+#### 수동 설치
+
+실제 메커니즘은 네 단계다. 여기서 `<profile>`은 `web`(또는 desktop이 아닌 어떤 프로파일)이다:
+
+```bash
+npm run build    # the mirror ships lib/, and a mirror made before the build is a partial plugin
+cp -r lib cordis.patch.yml package.json LICENSE README.md "$DSH_HOME/profiles/<profile>/.vendor/"
+dsh plugin --profile <profile> install
+dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
+```
+
+여기에 `<profile>/package.json` 의 두 항목이 더해진다:
+
+```json
+"dependencies": { "dsh-unreal-agentlink": "file:C:/Users/you/.dsh/profiles/web/.vendor" },
+"dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "dsh-unreal-agentlink"] } }
+```
+
+둘 다 필수이며 실패 양식이 다르다: `dsh.bundle`을 선언하지 않는 패키지를 목록에 올리면 부팅 시 **크게** 실패하고, 설치했지만 목록에 없으면 레이어가 **전혀** 기여되지 않는다. 그리고 `file:`는 워크스페이스가 아니라 복사본을 가리켜야 한다 — pnpm은 설치 시점에 그곳에서 발견한 것을 복사하므로, 반쯤 저장된 소스 파일이 DSH가 로드하는 플러그인이 된다.
+
+`desktop` 프로파일에는 CLI 경로가 없다: Electron 앱이 실행 중 그 `package.json`에 락을 쥐고 있고, 경쟁자는 다른 소유자의 락을 절대 지우지 않는다. GUI의 플러그인 관리자를 쓰거나, 앱을 먼저 닫아라.
+
+AI 에이전트가 설치를 한다면, 대신 [INSTALL-ai.md](INSTALL-ai.md)를 넘겨줘라 — 그것은 같은 절차를 에이전트가 읽고 검증할 수 있는 체크리스트로 쓴 것이다.
 
 ---
 

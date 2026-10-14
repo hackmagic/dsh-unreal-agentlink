@@ -1,7 +1,7 @@
 /**
  * Normalize the relative links in the body of every documentation file.
  *
- * The 37 documentation files link to each other constantly: a README points at its four
+ * The 45 documentation files link to each other constantly: a README points at its four
  * topic docs, a topic doc points back at the README and sideways at its siblings, and the
  * language bars point at the same document in eight other languages. Every one of those
  * links is a relative path, which means every one depends on how deep the file doing the
@@ -12,9 +12,12 @@
  * linked `zh/01-tutorial.md`, which resolves to `docs/readme/zh/01-tutorial.md` — a path
  * that does not exist — because the English `docs/01-tutorial.md` links `zh/01-tutorial.md`
  * and that link *is* correct from `docs/`. The root README had the mirror-image version of
- * the same disease, `../docs/01-tutorial.md`.
+ * the same disease, `../docs/01-tutorial.md`. The AI-readable install guide inherited the
+ * same mistake the moment it was translated: `docs/ko/INSTALL-ai.md` links
+ * `../../README.md`, which is the path that is correct from `docs/zh/` but not from
+ * `docs/ko/`.
  *
- * So links are derived here too, from a canonical inventory of the 37 files, and this
+ * So links are derived here too, from a canonical inventory of the 45 files, and this
  * script is idempotent. `tests/i18n.test.ts` is what proves the result: it fails on every
  * link that does not resolve, so this script and that test can be run against each other
  * until they agree.
@@ -24,7 +27,7 @@
  *
  * Three deliberate limits:
  *
- *   - Only links whose *basename* names one of the 37 inventory files are touched. A link
+ *   - Only links whose *basename* names one of the 45 inventory files are touched. A link
  *     to `package.json` or to a GitHub issue is somebody's content and stays as written.
  *
  *   - Only the body is touched — everything up to and including the closing `</div>` of
@@ -46,7 +49,7 @@ import { LANGUAGES, readmeOf } from './languages.mjs'
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..')
 const check = process.argv.includes('--check')
 
-const TOPIC_DOCS = ['01-tutorial.md', '02-protocol.md', '03-architecture.md', 'command-reference.md']
+const TOPIC_DOCS = ['01-tutorial.md', '02-protocol.md', '03-architecture.md', 'command-reference.md', 'INSTALL-ai.md']
 
 /** Every documentation file, as a repo-root-relative path. */
 const INVENTORY = new Set([

@@ -32,6 +32,16 @@ src/
   resilience/breaker.ts 限流 + 熔断
   sessions/state.ts     会话 ledger、LIFO 判定、锁合并、缓存、日志过滤
   tools/                12 个工具
+scripts/
+  extract-methods.mjs   从 C++ 提取目录（生成 method-data.ts）
+  check-catalog.mjs     双向对账目录与 C++ 注册表
+  gen-docs.mjs          为全部 9 种语言渲染 docs/<lang>/command-reference.md
+  languages.mjs         语言集 —— 生成器与文档测试共用
+  normalize-doc-headers.mjs  按语言集重写语言栏与文档导航行
+  normalize-doc-links.mjs    重写正文链接，使其从所在文件位置能解析
+  install-dsh-plugin.mjs     把本插件注册进一个 dsh profile（镜像、manifest、安装、验证）
+docs/                   教程 / 协议 / 架构 / 命令参考 / 安装指南，共 9 种语言
+tests/                  173 个测试，9 个文件
 ```
 
 ### 依赖方向
@@ -237,11 +247,15 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests（src 的 tsconfig 不含 tests）
-vitest run                         # 154 个测试
+vitest run                         # 173 个测试
 node scripts/check-catalog.mjs     # 4 项对账
+node scripts/gen-docs.mjs --check  # 9 种语言的命令参考是否为最新
+node scripts/normalize-doc-headers.mjs --check   # 54 份文档的语言栏是否都是规范形
+node scripts/normalize-doc-links.mjs --check     # 正文链接是否从所在位置能解析
+npm run install:dsh -- --profile web    # 把本插件注册进一个 dsh profile
 ```
 
-测试分 7 个文件，按**它们能发现的缺陷类型**划分：
+测试分 9 个文件，按**它们能发现的缺陷类型**划分：
 
 | 文件 | 覆盖 |
 |---|---|
@@ -251,11 +265,21 @@ node scripts/check-catalog.mjs     # 4 项对账
 | `catalog.test.ts` | 目录查询、原型链防护、审批门端到端 |
 | `bridge.test.ts` | 真实 WebSocket：队列、超时孤儿、事件、关闭 |
 | `tool-output.test.ts` | 每个工具的真实返回值过两段流水线 |
+| `i18n.test.ts` | 9 种语言下文档都完整且内部自洽 |
 | `end-to-end.test.ts` | 真实门链 + 真实 socket + 工具 schema |
+| `installer.test.ts` | DSH profile 安装器：参数处理、两条 manifest 条目、镜像边界、拒绝持锁 |
 
 **为什么要有 `end-to-end.test.ts`**：其他测试各自 stub 掉一层。而 `REQUIRED_KEYS` 那个 bug —— 生成、文档化、review 过、从未被 import —— 没有任何单元测试发现它，因为每一层单独看都自洽。只有把真实门链接上真实 socket，再喂给真实 schema，才能发现「这一层和那一层之间的缝」。
 
 同理，`tool-output.test.ts` 用**真实**的 `snapshotJsonValue` + `validateJsonSchemaValue`，而不是自己写一个 schema 检查 —— 否则 `ual_status` 的 `undefined` 缺陷照样漏掉。
+
+`installer.test.ts` 因第三个理由存在：安装器是这里唯一会写到**本仓库之外**的脚本，所以它一旦坏了，套件里没有任何其他东西会注意到。它用一个临时 profile 目录（`--profile-dir`）跑真实脚本，配一个会打印层标记的 `dsh` 桩 —— 也就是整个安装器减去它最后交还给产品的那一步。它钉住的正是单元测试里看不见的那些事：bundle 需要**同时**有依赖条目和 `dsh.profile.bundles` 条目，而且两者失败方式不同（列了却不是 bundle 会在启动时大声失败；装好却没列出则完全不贡献层）；manifest 会保留用户已有的每一个键；第二次运行什么都不会改；镜像只复制 `npm pack` 会发布的内容，所以 `.audit-tmp/` 不可能变成 dsh 加载的插件；持锁的 manifest 是被拒绝而不是被强夺。desktop 拒绝也被钉住，因为 `bin.js:38` 意味着一个自称能装的安装器只会写出一份操作员无法激活的 manifest。
+
+`i18n.test.ts` 出于同样的理由，针对的是另一道缝。`src/` 底下的一切对 `docs/` 一无所知，所以现有测试无法发现某份翻译在语言栏里漏了一种语言、或指向了它自己改过名的标题。它改成把文档当资料读：每种语言都有那五个文件，每一栏都列出全部九种语言且只把自己的那份加粗，每一个相对链接都能解析到真实文件，每一个 `#anchor` 都能解析到真实标题。最后一项才是有趣的那项 —— 锚点是从*译文*标题文字推导出来的，所以翻译者一旦改写「Verification strategy」，指向该节的每一个链接都会静默失效，而任何地方都不会报错。`gen-docs.mjs --check` 以同样方式守着生成出来的命令参考；`i18n.test.ts` 是调用它，而不是重新实现一遍渲染。
+
+它还抓到了测试自身的缺陷，那个更有教育意义。AI 可读的安装指南写成时先落地英文与简体中文，其余七份翻译后来才到，而整个窗口期套件一直是绿的。该指南不在 `FILES` 里，而 stray-file 测试不只是允许它 —— 它对它**毫无要求**。一次许可被当成了要求，而那个测试的全部职责就是发现缺失的文件。`SHARED_DOCS` 现在加入了其他列表，于是一份共用文档一旦被声明，就会立即被检查存在性、语言栏和链接；两个规范化脚本的 `TOPIC_DOCS` 也加了同一条目，因为语言栏生成器和 stray-file 测试必须对「存在什么」达成一致，否则两者都不可信。
+
+测试还抓到了促成两个规范化脚本的那两类机械缺陷。翻译者按英文原文读起来对的方式写链接，于是 `docs/readme/README_zh.md` 链的是 `zh/01-tutorial.md` —— 它解析到并不存在的 `docs/readme/zh/…` —— 而根 README 有镜像版的 `../docs/01-tutorial.md`。同类漂移也击中了头部语言栏：德文主题文档链的是自己的语言而不是加粗它，而安装指南的翻译要么完全没有语言栏、要么 `../../README.md` 深度是错的。因此语言栏与链接都由 `normalize-doc-headers.mjs` 与 `normalize-doc-links.mjs` 从 `scripts/languages.mjs` 加文件自己的译文标签推导出来，且两者都有 `--check` 模式接进 `npm run check`，手写链接不可能再落地。
 
 ---
 

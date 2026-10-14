@@ -1,8 +1,16 @@
+<div align="center">
+
+**English** · [简体中文](zh/INSTALL-ai.md) · [繁體中文](zh-TW/INSTALL-ai.md) · [日本語](ja/INSTALL-ai.md) · [한국어](ko/INSTALL-ai.md) · [Deutsch](de/INSTALL-ai.md) · [Español](es/INSTALL-ai.md) · [Français](fr/INSTALL-ai.md) · [Русский](ru/INSTALL-ai.md)
+
+[README](../README.md) · [Tutorial](01-tutorial.md) · [Protocol](02-protocol.md) · [Architecture](03-architecture.md) · [Command reference](command-reference.md) · **Install guide**
+
+</div>
+
 # Install (AI-readable)
 
 This file is written for an AI assistant that reads files and executes steps in order.
 Do not skip steps; every step has a verifiable outcome. For a human install, see the
-[README](../../README.md) or the [tutorial](01-tutorial.md).
+[README](../README.md) or the [tutorial](01-tutorial.md).
 
 > The AI only needs to run `scripts/install-dsh-plugin.mjs`. That script does
 > everything: mirror → edit the profile manifest → call the real installer →

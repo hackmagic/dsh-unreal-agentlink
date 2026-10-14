@@ -32,14 +32,18 @@ src/
   errors/translate.ts   error classification (by class name / status code, not by text)
   resilience/breaker.ts rate limiter + circuit breaker
   sessions/state.ts     session ledger, LIFO test, lock merging, cache, log filtering
-  tools/                the 12 tools
+  tools/                あの 12 個のツール
 scripts/
-  extract-methods.mjs   extracts the catalog from the C++ (generates method-data.ts)
-  check-catalog.mjs     reconciles catalog against the C++ registry, both directions
-  gen-docs.mjs          renders docs/<lang>/command-reference.md for all 9 languages
-  languages.mjs         the language set — shared by the generator and the docs tests
-docs/                   tutorial / protocol / architecture / command reference, ×9 languages
-tests/                  162 tests in 8 files
+  extract-methods.mjs   C++ からカタログを抽出する（method-data.ts を生成）
+  check-catalog.mjs     カタログと C++ レジストリを双方向で照合する
+  gen-docs.mjs          9 言語すべての docs/<lang>/command-reference.md を描画する
+  languages.mjs         言語セット —— 生成器とドキュメントテストで共有される
+  normalize-doc-headers.mjs  言語セットから言語バーとドキュメントナビゲーション行を書き換える
+  normalize-doc-links.mjs    本文リンクを、そのファイル自身の位置から解決できるように書き換える
+  install-dsh-plugin.mjs     このプラグインを dsh プロファイルに登録する（ミラー、マニフェスト、インストール、検証）
+docs/                   チュートリアル / プロトコル / アーキテクチャ / コマンドリファレンス / インストールガイド、
+                         ×9 言語
+tests/                  9 ファイルに 173 テスト
 ```
 
 ### 依存の向き
@@ -248,11 +252,15 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 154 tests
+vitest run                         # 173 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
+node scripts/gen-docs.mjs --check  # 9 言語のコマンドリファレンスが最新であること
+node scripts/normalize-doc-headers.mjs --check   # 54 ファイルの言語バーが規造型であること
+node scripts/normalize-doc-links.mjs --check     # 本文リンクがその位置から解決できること
+npm run install:dsh -- --profile web    # このプラグインを dsh プロファイルに登録する
 ```
 
-テストは 8 ファイルに分かれており、分け方は**それらが見つけられる欠陥の種類**だ：
+テストは 9 ファイルに分かれており、分け方は**それらが見つけられる欠陥の種類**だ：
 
 | ファイル | 対象 |
 |---|---|
@@ -264,12 +272,13 @@ node scripts/check-catalog.mjs     # 4 reconciliation checks
 | `tool-output.test.ts` | 全ツールの実際の戻り値を 2 段パイプラインに通す |
 | `i18n.test.ts` | ドキュメントが完全で内部整合的であること、全 9 言語で |
 | `end-to-end.test.ts` | 本物のゲートチェーン + 本物のソケット + 本物のツールスキーマ |
+| `installer.test.ts` | DSH プロファイルインストーラ：引数の処理、2 つのマニフェスト項目、ミラーの境界、ロック時の拒否 |
 
 **なぜ `end-to-end.test.ts` が必要か**：他のテストはどれも 1 つの層をスタブにしている。`REQUIRED_KEYS` のバグ —— 生成され、ドキュメント化され、レビューされ、そして import されなかった —— はどの単体テストにも捕捉されなかった。なぜなら各層は単体では自己矛盾がなかったからだ。本物のゲートチェーンを本物のソケットに配線し、本物のスキーマに与えてこそ、**層の間の継ぎ目**が露わになる。
 
 同じ理由で、`tool-output.test.ts` は独自のスキーマチェックを書くのではなく、**本物の** `snapshotJsonValue` + `validateJsonSchemaValue` を使う —— さもないと `ual_status` の `undefined` 欠陥が同じようにすり抜けてしまう。
 
-`i18n.test.ts` が存在するのも同じ理由で、ただし別の継ぎ目についてだ。`src/` の下のすべては `docs/` について何も知らないので、既存のどのテストも、言語切替バーに言語が 1 つ抜けていた翻訳や、改名した見出しに指していた翻訳に気づけなかった。このテストはドキュメントをデータとして読む：すべての言語に 4 つのファイルがあり、すべてのバーに 9 言語すべてが並び、ちょうど自分の言語だけが太字になり、すべての相対リンクが実際のファイルに解決し、すべての `#anchor` が実際の見出しに解決する。最後の 1 つが面白い —— アンカーは*翻訳された*見出しテキストから導出されるため、"Verification strategy" の言い回しを変えた翻訳者は、その節へのすべてのリンクを、どこにもエラーを出さずに静かに無効化してしまう。`gen-docs.mjs --check` は生成されたコマンドリファレンスを同じように守る。`i18n.test.ts` はレンダリングを再実装するのではなく、それにシェルアウトする。
+`i18n.test.ts` が存在するのも同じ理由で、ただし別の継ぎ目についてだ。`src/` の下のすべては `docs/` について何も知らないので、既存のどのテストも、言語切替バーに言語が 1 つ抜けていた翻訳や、改名した見出しに指していた翻訳に気づけなかった。このテストはドキュメントをデータとして読む：すべての言語に 5 つのファイルがあり、すべてのバーに 9 言語すべてが並び、ちょうど自分の言語だけが太字になり、すべての相対リンクが実際のファイルに解決し、すべての `#anchor` が実際の見出しに解決する。最後の 1 つが面白い —— アンカーは*翻訳された*見出しテキストから導出されるため、"Verification strategy" の言い回しを変えた翻訳者は、その節へのすべてのリンクを、どこにもエラーを出さずに静かに無効化してしまう。`gen-docs.mjs --check` は生成されたコマンドリファレンスを同じように守る。`i18n.test.ts` はレンダリングを再実装するのではなく、それにシェルアウトする。
 
 ---
 
