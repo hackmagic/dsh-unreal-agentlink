@@ -47,6 +47,17 @@
  * proven through `dsh plugin --profile desktop list` instead, which reads the
  * same package graph.
  *
+ * UPDATING AN EXISTING INSTALL
+ * ----------------------------
+ * A profile's pnpm cannot see that a `file:` dependency changed: it compares the
+ * lockfile with `node_modules/.modules.yaml`, sees the same spec, and answers
+ * "Already up to date". Re-running this script therefore has to break the
+ * dependency on purpose — drop both manifest entries, let pnpm really remove the
+ * package, then add them back — or the profile keeps loading the previous copy.
+ * That is not cosmetic: with no exemption granted, the old copy's peer ranges
+ * make the runtime refuse the layer at boot. `staleCopyReason` decides, by
+ * comparing the installed `package.json` with the mirrored one.
+ *
  * Usage:
  *   node scripts/install-dsh-plugin.mjs --profile web            # install
  *   node scripts/install-dsh-plugin.mjs --profile web --status    # check
@@ -176,6 +187,30 @@ function mirror(project, target) {
     cpSync(from, to, { recursive: true })
   }
   return wanted.length
+}
+
+/**
+ * A profile's pnpm does not notice that a `file:` dependency changed: it
+ * compares the lockfile against `node_modules/.modules.yaml`, sees the same
+ * spec, and answers "Already up to date". An updated vendor tree therefore
+ * never reaches `node_modules/<name>`, and the profile keeps loading the
+ * previous copy — which, with the version guard no longer exempt, is refused at
+ * boot ("profile startup denies it"). Measured on this host: after the peer
+ * ranges changed, a plain re-install left the three-days-old copy in place, and
+ * deleting that copy by hand made the product's reconcile fail outright with
+ * `cannot resolve profile bundle "..."`. `--force` does not help; pnpm still
+ * reports "Already up to date" and does not relink the missing directory. The
+ * only thing that works is to make the dependency genuinely absent first.
+ *
+ * Compares file CONTENT rather than mtime: `mirror` rewrites the vendor tree on
+ * every run, so its mtime is always newer than the copy pnpm installed.
+ */
+function staleCopyReason(profileDir, vendorDir) {
+  const installed = path.join(profileDir, 'node_modules', NAME, 'package.json')
+  const mirrored = path.join(vendorDir, 'package.json')
+  if (!existsSync(installed)) return 'missing'
+  if (!existsSync(mirrored)) return false
+  return readFileSync(installed).equals(readFileSync(mirrored)) ? false : 'outdated'
 }
 
 /**
@@ -372,6 +407,33 @@ async function main() {
   } else {
     writeManifest(manifestPath, json)
     console.log(`install: wrote ${path.relative(PROJECT, manifestPath)} (dependency ${changedDependency ? 'added' : 'present'}, bundle ${changedBundle ? 'added' : 'present'})`)
+  }
+
+  // See `staleCopyReason`: pnpm answers "Already up to date" for a `file:`
+  // dependency whose content changed, so an updated vendor tree would otherwise
+  // never reach `node_modules`. Drop both entries, let pnpm really remove the
+  // package, then add them back and let the install below put the new copy in.
+  // Only needed when it is already registered — a first install has nothing to
+  // replace.
+  if (args.mirror && !changedDependency) {
+    const stale = staleCopyReason(profileDir, target)
+    if (stale) {
+      console.log(`install: the profile holds ${stale === 'missing' ? 'no copy' : 'an older copy'} of ${NAME}; replacing it`)
+      const { json: current } = readManifest(manifestPath)
+      const droppedDependency = withoutDependency(current, NAME)
+      const droppedBundle = withoutBundle(current, NAME)
+      if (droppedDependency || droppedBundle) writeManifest(manifestPath, current)
+      console.log(`install: dropped the manifest entries first (dependency ${droppedDependency ? 'removed' : 'already absent'}, bundle ${droppedBundle ? 'removed' : 'already absent'})`)
+      const removed = dsh(dshBin, args.profile, ['install'])
+      if (removed !== 0) {
+        console.error('install: could not replace the previous copy; see the pnpm output above')
+        process.exit(removed)
+      }
+      const { json: restored } = readManifest(manifestPath)
+      withDependency(restored, NAME, spec)
+      withBundle(restored, NAME)
+      writeManifest(manifestPath, restored)
+    }
   }
 
   // The real installer does the peer-dependency check, the reconcile of

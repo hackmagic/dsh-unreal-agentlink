@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,7 +30,11 @@ import { afterAll, describe, expect, it } from 'vitest'
  *     listed contributes no layer at all;
  *   - the edit is idempotent, and it preserves every other key in the manifest;
  *   - the mirror contains only what `files` declares, so `file:` never points at
- *     a live workspace with a half-saved source file or a stray `.audit-tmp/`.
+ *     a live workspace with a half-saved source file or a stray `.audit-tmp/`;
+ *   - an update actually updates: pnpm treats a `file:` dependency as unchanged
+ *     ("Already up to date"), so the installer must drop the manifest entries
+ *     and let the product remove the package before adding it back, or the
+ *     profile keeps loading the previous copy.
  *
  * Everything else in the installer — calling pnpm, the peer-dependency guard,
  * the composed-tree verification — runs only against a real dsh, which is why the
@@ -95,9 +99,17 @@ const SCRIPT = join(ROOT, 'scripts', 'install-dsh-plugin.mjs')
   const dshStub = (dir: string, opts: { lists?: boolean } = {}) => {
     const listed = opts.lists === false ? '- some-other-plugin@1.0.0' : '- dsh-unreal-agentlink@file:.vendor'
     const stub = join(dir, 'dsh-stub.cmd')
+    const log = join(dir, 'dsh-calls.log')
     writeFileSync(
       stub,
       '@echo off\r\n' +
+        // Every invocation is recorded, together with whether the manifest it
+        // ran against still named this package. The stale-copy test needs both:
+        // "the installer drove dsh twice" is not enough, because a removal that
+        // silently writes nothing still yields two calls.
+        'set "DEP=absent"\r\n' +
+        `if exist "%UAL_TEST_PROFILE_DIR%\\package.json" findstr /c:"dsh-unreal-agentlink" "%UAL_TEST_PROFILE_DIR%\\package.json" >nul 2>&1 && set "DEP=present"\r\n` +
+        `echo %* ^| dep=%DEP% >> "${log}"\r\n` +
         'if "%1"=="plugin" (\r\n' +
         'echo Legend: production dependency\r\n' +
         'echo.\r\n' +
@@ -112,6 +124,13 @@ const SCRIPT = join(ROOT, 'scripts', 'install-dsh-plugin.mjs')
       'utf8',
     )
     return stub
+  }
+
+  /** Every `dsh` the stub answered, in order, with the manifest it saw. */
+  const dshCalls = (dir: string) => {
+    const log = join(dir, 'dsh-calls.log')
+    if (!existsSync(log)) return []
+    return readFileSync(log, 'utf8').split(/\r?\n/).filter((line) => line.trim().length > 0)
   }
 
   /**
@@ -321,6 +340,103 @@ describe('install-dsh-plugin manifest edit', () => {
     expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).dependencies).not.toHaveProperty(
       'dsh-unreal-agentlink',
     )
+  })
+
+  /**
+   * A profile's pnpm answers "Already up to date" for a `file:` dependency whose
+   * content changed, so an updated vendor tree never reaches
+   * `node_modules/<name>`: the profile keeps loading the previous copy, and once
+   * the version guard is no longer exempt it refuses the layer at boot. Deleting
+   * the copy by hand is worse — the product's reconcile then fails with
+   * `cannot resolve profile bundle`. The installer has to break the dependency
+   * (drop both entries, let pnpm really remove the package) before adding it
+   * back. Measured on this host, hence these three cases.
+   */
+  const registerWithCopy = (dir: string, copy: string | null) => {
+    writeFileSync(
+      join(dir, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: 'dsh-profile-test',
+          private: true,
+          dependencies: { ws: '^8.18.0', 'dsh-unreal-agentlink': 'file:./.vendor' },
+          dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', 'dsh-unreal-agentlink'] } },
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    )
+    if (copy === null) return
+    mkdirSync(join(dir, 'node_modules', 'dsh-unreal-agentlink'), { recursive: true })
+    writeFileSync(join(dir, 'node_modules', 'dsh-unreal-agentlink', 'package.json'), copy, 'utf8')
+  }
+
+  it('replaces an older installed copy instead of trusting pnpm', () => {
+    const dir = fakeProfile()
+    dirs.push(dir)
+    registerWithCopy(
+      dir,
+      `${JSON.stringify(
+        {
+          name: 'dsh-unreal-agentlink',
+          version: '0.1.0',
+          peerDependencies: { '@deepseek-ai/dsh-agent': '^0.1.6-alpha.2' },
+        },
+        null,
+        2,
+      )}\n`,
+    )
+
+    // Mirror on, so `.vendor/package.json` is this repo's real manifest and the
+    // installed copy above is genuinely older than it.
+    process.env.UAL_TEST_PROFILE_DIR = dir
+    const r = run(against(dir, []))
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('an older copy')
+    // The removal install must have run against a manifest that no longer named
+    // the package, and the final one against a manifest that does again: two
+    // calls alone would also come out of a removal that silently wrote nothing.
+    const calls = dshCalls(dir)
+    expect(calls.filter((line) => line.includes('install') && line.includes('dep=absent')).length).toBe(1)
+    expect(calls.filter((line) => line.includes('install') && line.includes('dep=present')).length).toBe(1)
+
+    const after = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    expect(Object.keys(after.dependencies).sort()).toEqual(['dsh-unreal-agentlink', 'ws'])
+    expect(after.dsh.profile.bundles).toEqual(['@deepseek-ai/dsh-base', 'dsh-unreal-agentlink'])
+  })
+
+  it('replaces a copy pnpm left missing', () => {
+    const dir = fakeProfile()
+    dirs.push(dir)
+    registerWithCopy(dir, null)
+
+    process.env.UAL_TEST_PROFILE_DIR = dir
+    const r = run(against(dir, []))
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('no copy')
+    const calls = dshCalls(dir)
+    expect(calls.filter((line) => line.includes('install') && line.includes('dep=absent')).length).toBe(1)
+    expect(calls.filter((line) => line.includes('install') && line.includes('dep=present')).length).toBe(1)
+  })
+
+  it('leaves a matching installed copy alone', () => {
+    const dir = fakeProfile()
+    dirs.push(dir)
+    const args = against(dir, [])
+    process.env.UAL_TEST_PROFILE_DIR = dir
+    run(args)
+
+    const copy = join(dir, 'node_modules', 'dsh-unreal-agentlink')
+    mkdirSync(copy, { recursive: true })
+    copyFileSync(join(dir, '.vendor', 'package.json'), join(copy, 'package.json'))
+
+    const before = dshCalls(dir).filter((line) => line.includes('install')).length
+    const second = run(args)
+    expect(second.status).toBe(0)
+    expect(second.stdout).not.toContain('copy of')
+    expect(dshCalls(dir).filter((line) => line.includes('install')).length).toBe(before + 1)
+    expect(dshCalls(dir).filter((line) => line.includes('dep=absent')).length).toBe(0)
   })
 })
 
