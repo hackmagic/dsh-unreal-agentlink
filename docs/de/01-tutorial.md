@@ -97,7 +97,7 @@ npm run status:dsh -- --profile web   # was gerade registriert ist (npm-Passthro
 node scripts/install-dsh-plugin.mjs --profile web            # spiegeln, Manifest bearbeiten, installieren, prüfen
 ```
 
-Es verweigert das Anfassen eines Manifests, das ein laufendes DSH noch hält, und beweist, dass die Schicht zusammengesetzt ist, bevor es Erfolg meldet — über `--dump-config` überall außer beim Profil `desktop`, das die CLI nicht zusammensetzt, sodass `dsh plugin --profile desktop list` dafür einspringt. Stoppt die Peer-Dependency-Wache die Installation, gibt es den genauen Befehl aus, um das Risiko zu akzeptieren — **diese Entscheidung ist Ihre, nicht die des Skripts**.
+Es verweigert das Anfassen eines Manifests, das ein laufendes DSH noch hält, und beweist, dass die Schicht zusammengesetzt ist, bevor es Erfolg meldet — über `--dump-config` überall außer beim Profil `desktop`, das die CLI nicht zusammensetzt, sodass `dsh plugin --profile desktop list` dafür einspringt. Die deklarierten Peer-Bereiche decken sowohl die Version ab, gegen die dieses Plugin gebaut wird, als auch die `0.2.x`-Linie, von der das aktuelle dsh ausgeliefert wird, sodass die Peer-Dependency-Wache eine normale Installation nicht stoppt; fällt eine künftige Laufzeit außerhalb dieser Bereiche, gibt es den genauen Befehl aus, um das Risiko zu akzeptieren — **diese Entscheidung ist Ihre, nicht die des Skripts**.
 
 #### Von Hand
 

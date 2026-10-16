@@ -64,11 +64,22 @@ chargera pas le plugin.
 
 dsh a un contrôle au niveau produit : une installation est refusée lorsque les
 `peerDependencies` du plugin sont incompatibles avec la version de dsh du runtime.
-Ce projet épingle `@deepseek-ai/*` à `0.1.6-alpha.2` alors que le dsh livré est
-`0.2.0-rc.2`, l'installation s'arrête donc ici.
+Ce projet déclare chaque peer `@deepseek-ai/dsh-*` comme
+`>=0.1.6-alpha.2 <0.2.0-0 || >=0.2.0-rc.1 <0.3.0`, ce qui accepte à la fois la version
+contre laquelle ce plugin est construit et testé (`0.1.6-alpha.2`) et la ligne `0.2.x` dont
+le dsh actuel est issu — une installation normale sur un runtime pris en charge ne s'arrête
+donc **pas** ici.
 
-**C'est une décision produit ; le script ne la prend délibérément pas à votre place.**
-Il affiche la commande exacte :
+> Les deux branches ne sont pas décoratives. semver refuse de faire correspondre une version
+> de préversion à une plage dont les comparateurs ne portent aucune balise de préversion, si
+> bien qu'un simple `^0.1.6-alpha.2` faisait paraître incompatible chaque runtime
+> `0.2.0-rc.*`. Chaque ligne prise en charge a donc besoin de sa propre branche avec un
+> plancher de préversion explicite, et la borne supérieure s'arrête à la ligne suivante dont
+> personne n'a testé l'API.
+
+Le garde se déclenche encore pour un runtime hors de ces plages — un futur `0.3.x`, ou un
+`0.1.x` plus ancien que `0.1.6-alpha.2`. **C'est une décision produit ; le script ne la prend
+délibérément pas à votre place.** dsh affiche la commande exacte lorsqu'il refuse :
 
 ```bash
 dsh plugin --profile web allow-version dsh-unreal-agentlink@0.1.0 --dsh-version 0.2.0-rc.2 --accept-risk

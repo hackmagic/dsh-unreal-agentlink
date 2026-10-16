@@ -70,7 +70,7 @@ npm run status:dsh -- --profile web     # 現在登録されている内容（�
 node scripts/install-dsh-plugin.mjs --profile web             # ミラー、manifest の編集、インストール、検証
 ```
 
-動作中の DSH がまだ保持している manifest には触れず、成功を報告する前に layer が合成されていることを証明する：`dsh --profile <profile> --dump-config` に `# == dsh-unreal-agentlink` が含まれていなければならない。ただし `desktop` だけは CLI が合成しないので、そこでは同じパッケージグラフを読む `dsh plugin --profile desktop list` で layer を証明する。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
+動作中の DSH がまだ保持している manifest には触れず、成功を報告する前に layer が合成されていることを証明する：`dsh --profile <profile> --dump-config` に `# == dsh-unreal-agentlink` が含まれていなければならない。ただし `desktop` だけは CLI が合成しないので、そこでは同じパッケージグラフを読む `dsh plugin --profile desktop list` で layer を証明する。宣言されたピア範囲は、このプラグインがビルド対象としているバージョンと、現在の dsh が出荷される元である `0.2.x` ラインの両方をカバーしているので、ピア依存のガードが通常のインストールを止めることはない。将来のランタイムがその範囲外になった場合は、リスクを受け入れるための正確なコマンドが dsh から出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
 
 あと 2 つの道のりがあり、どちらも文章化されている：下記の[スクリプトなしで手動インストールする](#スクリプトなしで手動インストールする)と、[INSTALL-ai.md](../ja/INSTALL-ai.md) —— AI エージェントが読んで順番に実行できるバージョン。
 

@@ -70,7 +70,7 @@ npm run status:dsh -- --profile web     # what is registered right now (same scr
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-Se niega a tocar un manifiesto que una DSH en ejecución todavía retiene, y demuestra que la capa está compuesta antes de informar del éxito: `dsh --profile <profile> --dump-config` debe contener `# == dsh-unreal-agentlink`, salvo en `desktop`, que la CLI no compondrá — ahí la capa se demuestra con `dsh plugin --profile desktop list`, que lee el mismo grafo de paquetes. Si la guarda de dependencias entre pares detiene la instalación, imprime el comando exacto para aceptar el riesgo — **esa decisión es tuya, no la del script**.
+Se niega a tocar un manifiesto que una DSH en ejecución todavía retiene, y demuestra que la capa está compuesta antes de informar del éxito: `dsh --profile <profile> --dump-config` debe contener `# == dsh-unreal-agentlink`, salvo en `desktop`, que la CLI no compondrá — ahí la capa se demuestra con `dsh plugin --profile desktop list`, que lee el mismo grafo de paquetes. Los rangos de pares declarados cubren tanto la versión contra la que está construido este plugin como la línea `0.2.x` de la que parte el dsh actual, así que la guarda de dependencias entre pares no detiene una instalación normal; si un runtime futuro queda fuera de ellos, dsh imprime el comando exacto para aceptar el riesgo — **esa decisión es tuya, no la del script**.
 
 Dos caminos más, ambos escritos: la [instalación manual](#instalación-manual-sin-el-script) de abajo, e [INSTALL-ai.md](../es/INSTALL-ai.md) — una versión que un agente de IA puede leer y seguir paso a paso.
 

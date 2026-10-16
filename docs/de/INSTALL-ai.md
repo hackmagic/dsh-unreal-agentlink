@@ -62,11 +62,21 @@ und scheitert der fünfte, ist die Schicht nicht zusammengesetzt, und dsh wird d
 
 dsh hat eine Wache auf Produktebene: eine Installation wird verweigert, wenn die
 `peerDependencies` des Plugins mit der dsh-Version der Laufzeit unverträglich sind. Dieses Projekt
-pinnt `@deepseek-ai/*` auf `0.1.6-alpha.2`, während das ausgelieferte dsh `0.2.0-rc.2` ist,
-die Installation endet daher hier.
+deklariert jeden `@deepseek-ai/dsh-*`-Peer als
+`>=0.1.6-alpha.2 <0.2.0-0 || >=0.2.0-rc.1 <0.3.0`, was sowohl die Version akzeptiert, gegen die
+dieses Plugin gebaut und getestet wird (`0.1.6-alpha.2`), als auch die `0.2.x`-Linie, von der das
+aktuelle dsh ausgeliefert wird — eine normale Installation auf einer unterstützten Laufzeit endet
+daher **nicht** hier.
 
-**Das ist eine Produktentscheidung; das Skript trifft sie absichtlich nicht für Sie.**
-Es gibt den genauen Befehl aus:
+> Die beiden Zweige sind keine Zierde. semver weigert sich, eine Prerelease-Version gegen einen
+> Bereich zu prüfen, dessen Comparators kein Prerelease-Tag tragen, sodass ein blankes
+> `^0.1.6-alpha.2` jede `0.2.0-rc.*`-Laufzeit unverträglich erscheinen ließ. Jede unterstützte
+> Linie braucht daher ihren eigenen Zweig mit einer ausdrücklichen Prerelease-Untergrenze, und die
+> Obergrenze endet an der nächsten Linie, deren API niemand getestet hat.
+
+Die Wache greift weiterhin bei einer Laufzeit außerhalb dieser Bereiche — einer künftigen `0.3.x` oder
+einer `0.1.x`, die älter als `0.1.6-alpha.2` ist. **Das ist eine Produktentscheidung; das Skript
+trifft sie absichtlich nicht für Sie.** dsh gibt den genauen Befehl aus, wenn es verweigert:
 
 ```bash
 dsh plugin --profile web allow-version dsh-unreal-agentlink@0.1.0 --dsh-version 0.2.0-rc.2 --accept-risk

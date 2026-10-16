@@ -70,7 +70,7 @@ npm run status:dsh -- --profile web     # what is registered right now (same scr
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-它拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成：`dsh --profile <profile> --dump-config` 必須包含 `# == dsh-unreal-agentlink`；只有 `desktop` 例外 —— CLI 不會合成該 profile，那裡改由 `dsh plugin --profile desktop list` 證明，它讀的是同一份套件依賴圖。如果 peer dependency 守衛擋下了安裝，它會印出接受風險的確切指令 —— **那個決定是你的，不是腳本的**。
+它拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成：`dsh --profile <profile> --dump-config` 必須包含 `# == dsh-unreal-agentlink`；只有 `desktop` 例外 —— CLI 不會合成該 profile，那裡改由 `dsh plugin --profile desktop list` 證明，它讀的是同一份套件依賴圖。宣告的 peer 範圍同時涵蓋本外掛建置所依據的版本，以及目前 dsh 出貨的 `0.2.x` 系列，所以 peer dependency 守衛不會擋下正常安裝；只有將來的執行環境落在這些範圍之外時，dsh 才會印出接受風險的確切指令 —— **那個決定是你的，不是腳本的**。
 
 另外還有兩條路，兩邊都寫出來了：下面的[不使用指令碼的手動安裝](#不使用指令碼的手動安裝)，以及 [INSTALL-ai.md](../zh-TW/INSTALL-ai.md) —— 一個 AI agent 能讀並逐步照做的版本。
 

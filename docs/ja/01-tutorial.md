@@ -97,7 +97,7 @@ npm run status:dsh -- --profile web   # 現在登録されている内容（npm 
 node scripts/install-dsh-plugin.mjs --profile web            # ミラー、manifest の編集、インストール、検証
 ```
 
-動作中の DSH がまだ保持している manifest には触れず、成功を報告する前に layer が合成されていることを証明する —— `desktop` profile 以外ではどこでも `--dump-config` を使うが、その profile は CLI が合成しないので、代わりに `dsh plugin --profile desktop list` がそれを担う。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
+動作中の DSH がまだ保持している manifest には触れず、成功を報告する前に layer が合成されていることを証明する —— `desktop` profile 以外ではどこでも `--dump-config` を使うが、その profile は CLI が合成しないので、代わりに `dsh plugin --profile desktop list` がそれを担う。宣言されたピア範囲は、このプラグインがビルド対象としているバージョンと、現在の dsh が出荷される元である `0.2.x` ラインの両方をカバーしているので、ピア依存のガードが通常のインストールを止めることはない。将来のランタイムがその範囲外になった場合は、リスクを受け入れるための正確なコマンドが dsh から出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
 
 #### 手動でインストールする
 

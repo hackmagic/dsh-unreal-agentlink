@@ -95,7 +95,7 @@ npm run status:dsh -- --profile web   # 先看当前注册情况（npm 参数透
 node scripts/install-dsh-plugin.mjs --profile web            # 镜像、改 manifest、安装、验证
 ```
 
-它拒绝修改仍被运行中的 DSH 持有的 manifest，并且只在确认配置层真正生效后才报告成功 —— 除 `desktop` profile 外处处都走 `--dump-config`，而 CLI 不会合成 `desktop`，那里由 `dsh plugin --profile desktop list` 代劳。如果被 peer 依赖守卫拦住，它会打印出接受风险的确切命令——**这个决定是你的，不是脚本的**。
+它拒绝修改仍被运行中的 DSH 持有的 manifest，并且只在确认配置层真正生效后才报告成功 —— 除 `desktop` profile 外处处都走 `--dump-config`，而 CLI 不会合成 `desktop`，那里由 `dsh plugin --profile desktop list` 代劳。声明的 peer 范围同时覆盖本插件构建所依据的版本，以及当前 dsh 出厂的 `0.2.x` 系列，所以 peer 依赖守卫不会拦住正常安装；只有将来的运行时落在这些范围之外时，dsh 才会打印出接受风险的确切命令——**这个决定是你的，不是脚本的**。
 
 #### 手动安装
 

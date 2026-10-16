@@ -97,7 +97,7 @@ npm run status:dsh -- --profile web   # what is registered right now (npm passth
 node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
 ```
 
-Il refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès — via `--dump-config` partout sauf pour le profil `desktop`, que la CLI ne composera pas, si bien que `dsh plugin --profile desktop list` le remplace. Si le garde de peer-dependencies arrête l'installation, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
+Il refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès — via `--dump-config` partout sauf pour le profil `desktop`, que la CLI ne composera pas, si bien que `dsh plugin --profile desktop list` le remplace. Les plages de peer déclarées couvrent à la fois la version contre laquelle ce plugin est construit et la ligne `0.2.x` dont le dsh actuel est issu, si bien que le garde de peer-dependencies n'arrête pas une installation normale ; si un futur runtime tombe en dehors de ces plages, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
 
 #### À la main
 

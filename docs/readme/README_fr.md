@@ -70,7 +70,7 @@ npm run status:dsh -- --profile web     # ce qui est enregistré à l'instant (m
 node scripts/install-dsh-plugin.mjs --profile web             # miroir, modifier le manifeste, installer, vérifier
 ```
 
-Il refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès : `dsh --profile <profile> --dump-config` doit contenir `# == dsh-unreal-agentlink`, sauf sur `desktop`, que la CLI ne composera pas — là, la couche est prouvée via `dsh plugin --profile desktop list`, qui lit le même graphe de paquets. Si le garde de peer-dependencies arrête l'installation, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
+Il refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès : `dsh --profile <profile> --dump-config` doit contenir `# == dsh-unreal-agentlink`, sauf sur `desktop`, que la CLI ne composera pas — là, la couche est prouvée via `dsh plugin --profile desktop list`, qui lit le même graphe de paquets. Les plages de peer déclarées couvrent à la fois la version contre laquelle ce plugin est construit et la ligne `0.2.x` dont le dsh actuel est issu, si bien que le garde de peer-dependencies n'arrête pas une installation normale ; si un futur runtime tombe en dehors de ces plages, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
 
 Deux autres chemins, tous deux écrits : l'[installation manuelle](#installation-manuelle-sans-le-script) ci-dessous, et [INSTALL-ai.md](../fr/INSTALL-ai.md) — une version qu'un agent IA peut lire et suivre étape par étape.
 

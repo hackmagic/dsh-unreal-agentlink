@@ -22,10 +22,13 @@
  *
  * WHAT IT DELIBERATELY DOES NOT DO
  * --------------------------------
- * It never grants the version exemption itself. The guard is a product decision
- * ("Update the plugin or install a compatible version"); this project pins
- * 0.1.6-alpha.2 peer ranges while the shipped dsh is 0.2.0-rc.2, so the install
- * stops there on purpose and prints the exact command to accept the risk.
+ * It never grants the version exemption itself. The declared peer ranges
+ * (`>=0.1.6-alpha.2 <0.2.0-0 || >=0.2.0-rc.1 <0.3.0`) accept both the version
+ * this plugin is built against and the `0.2.x` line the shipped dsh comes from,
+ * so a supported runtime installs with no exemption at all. A runtime outside
+ * that range still trips the guard — a product decision ("Update the plugin or
+ * install a compatible version") this script refuses to make: it lets dsh print
+ * the exact `allow-version` command and stops there.
  *
  * THE `desktop` PROFILE
  * ---------------------
@@ -372,21 +375,23 @@ async function main() {
   }
 
   // The real installer does the peer-dependency check, the reconcile of
-  // dsh.profile.bundles, and the actual pnpm run.
-  const exempt = readExemption(profileDir, NAME, VERSION)
-  if (!exempt) {
-    console.log(`install: note: ${NAME}@${VERSION} pins @deepseek-ai peer ranges that this dsh`)
-    console.log(`install: runtime does not ship, so the guard will stop the install. To accept that`)
-    console.log(`install: risk explicitly (a product decision, not this script's to make):`)
-    console.log(`install:   ${path.basename(dshBin)} plugin --profile ${args.profile} allow-version ${NAME}@${VERSION} --dsh-version <dsh version> --accept-risk`)
-  }
+  // dsh.profile.bundles, and the actual pnpm run. There is deliberately no peer
+  // pre-flight guess here: this script used to predict the product's
+  // version guard from the manifest's ranges and print the `allow-version`
+  // command up front; the prediction was simply wrong — the declared ranges
+  // accept the runtime shipped here, so the guard never fires (measured: a clean
+  // profile with no compatibility.json installs and prints "is now a bundle
+  // layer"). dsh prints the exact command itself when it does refuse, so let the
+  // product speak instead of guessing on its behalf.
 
   const code = dsh(dshBin, args.profile, ['install'])
   if (code !== 0) {
     console.error(`install: dsh rejected the install; diagnostics under ${path.join(profileDir, '.plugin-manager', 'logs')}`)
+    const exempt = readExemption(profileDir, NAME, VERSION)
     if (!exempt) {
-      console.error(`install: the version guard is still not exempt for ${NAME}@${VERSION}. Grant it with:`)
-      console.error(`install:   ${path.basename(dshBin)} plugin --profile ${args.profile} allow-version ${NAME}@${VERSION} --dsh-version <dsh version> --accept-risk`)
+      console.error(`install: if the refusal was the version guard, ${NAME}@${VERSION} is not exempt.`)
+      console.error(`install: dsh prints the exact allow-version command above; granting it is a`)
+      console.error(`install: product decision that needs human confirmation, not this script's.`)
     }
     process.exit(code)
   }

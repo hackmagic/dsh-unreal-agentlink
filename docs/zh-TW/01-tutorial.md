@@ -97,7 +97,7 @@ npm run status:dsh -- --profile web     # what is registered right now (same scr
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-它拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成 —— 除了 `desktop` profile 之外，處處都走 `--dump-config`（`dsh --profile <profile> --dump-config` 必須包含 `# == dsh-unreal-agentlink`）；`desktop` 是 CLI 不會合成的 profile，所以改由 `dsh plugin --profile desktop list` 代勞。它還會核對 peer dependency —— 只有一個確定的 DSH 版本被宣告可以載入本外掛，所以一個明顯不相容的執行環境會被 `allow-version` 放行，而不是被悄悄忽略。如果守衛擋下了安裝，它會印出接受風險的確切指令（`--accept-risk`）；**那個決定是你的，不是腳本的**。
+它拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成 —— 除了 `desktop` profile 之外，處處都走 `--dump-config`（`dsh --profile <profile> --dump-config` 必須包含 `# == dsh-unreal-agentlink`）；`desktop` 是 CLI 不會合成的 profile，所以改由 `dsh plugin --profile desktop list` 代勞。宣告的 peer 範圍同時涵蓋本外掛建置所依據的版本，以及目前 dsh 出貨的 `0.2.x` 系列，所以 peer dependency 守衛不會擋下正常安裝；只有將來的執行環境落在這些範圍之外時，dsh 才會印出接受風險的確切指令（`--accept-risk`）；**那個決定是你的，不是腳本的**。
 
 #### 手動安裝
 

@@ -62,11 +62,22 @@ and the fifth fails, the layer is not composed and dsh will not load the plugin.
 
 dsh has a product-level guard: an install is refused when the plugin's
 `peerDependencies` are incompatible with the runtime's dsh version. This project
-pins `@deepseek-ai/*` at `0.1.6-alpha.2` while the shipped dsh is `0.2.0-rc.2`,
-so the install stops here.
+declares every `@deepseek-ai/dsh-*` peer as
+`>=0.1.6-alpha.2 <0.2.0-0 || >=0.2.0-rc.1 <0.3.0`, which accepts both the version
+this plugin is built and tested against (`0.1.6-alpha.2`) and the `0.2.x` line the
+current dsh ships from — so a normal install on a supported runtime does **not**
+stop here.
 
-**That is a product decision; the script deliberately does not make it for you.**
-It prints the exact command:
+> The two branches are not decoration. semver refuses to match a prerelease
+> version against a range whose comparators carry no prerelease tag, so a bare
+> `^0.1.6-alpha.2` made every `0.2.0-rc.*` runtime look incompatible. Each
+> supported line therefore needs its own branch with an explicit prerelease
+> floor, and the upper bound stops at the next line whose API nobody has tested.
+
+The guard still fires on a runtime outside those ranges — a future `0.3.x`, or a
+`0.1.x` older than `0.1.6-alpha.2`. **That is a product decision; the script
+deliberately does not make it for you.** dsh prints the exact command when it
+refuses:
 
 ```bash
 dsh plugin --profile web allow-version dsh-unreal-agentlink@0.1.0 --dsh-version 0.2.0-rc.2 --accept-risk

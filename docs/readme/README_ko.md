@@ -70,7 +70,7 @@ npm run status:dsh -- --profile web     # what is registered right now (same scr
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-이 스크립트는 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명합니다: `dsh --profile <profile> --dump-config`에 `# == dsh-unreal-agentlink`가 들어 있어야 하지만, CLI가 합성하지 않는 `desktop`에서는 예외입니다 — 그곳에서는 같은 패키지 그래프를 읽는 `dsh plugin --profile desktop list`로 레이어를 증명합니다. 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력합니다 — **그 결정은 당신의 것이지 스크립트의 것이 아닙니다**.
+이 스크립트는 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명합니다: `dsh --profile <profile> --dump-config`에 `# == dsh-unreal-agentlink`가 들어 있어야 하지만, CLI가 합성하지 않는 `desktop`에서는 예외입니다 — 그곳에서는 같은 패키지 그래프를 읽는 `dsh plugin --profile desktop list`로 레이어를 증명합니다. 선언된 피어 범위는 이 플러그인이 빌드되는 대상 버전과 현재 DSH가 배포하는 `0.2.x` 계열을 모두 포함하므로, 피어 의존성 가드가 정상적인 설치를 막지 않습니다. 향후 런타임이 그 범위를 벗어나면 DSH가 위험을 수락할 정확한 명령을 출력합니다 — **그 결정은 당신의 것이지 스크립트의 것이 아닙니다**.
 
 남은 두 경로도 모두 적혀 있습니다: 아래의 [스크립트 없이 수동 설치](#스크립트-없이-수동-설치), 그리고 [INSTALL-ai.md](../ko/INSTALL-ai.md) — AI 에이전트가 읽고 단계별로 따를 수 있는 버전.
 

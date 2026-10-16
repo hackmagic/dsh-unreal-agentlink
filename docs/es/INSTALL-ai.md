@@ -62,11 +62,23 @@ pasos pasan y el quinto falla, la capa no está compuesta y dsh no cargará el p
 
 dsh tiene una guarda a nivel de producto: una instalación se rechaza cuando las
 `peerDependencies` del plugin son incompatibles con la versión de dsh del runtime. Este
-proyecto fija `@deepseek-ai/*` en `0.1.6-alpha.2` mientras que el dsh distribuido es `0.2.0-rc.2`,
-así que la instalación se detiene aquí.
+proyecto declara cada peer `@deepseek-ai/dsh-*` como
+`>=0.1.6-alpha.2 <0.2.0-0 || >=0.2.0-rc.1 <0.3.0`, lo que acepta tanto la versión
+contra la que este plugin está construido y probado (`0.1.6-alpha.2`) como la línea `0.2.x`
+de la que parte el dsh actual — así que una instalación normal en un runtime compatible **no**
+se detiene aquí.
 
-**Esa es una decisión de producto; el script deliberadamente no la toma por ti.**
-Imprime el comando exacto:
+> Las dos ramas no son decoración. semver se niega a hacer coincidir una versión
+> preliminar con un rango cuyos comparadores no llevan etiqueta preliminar, así que
+> un `^0.1.6-alpha.2` a secas hacía que todo runtime `0.2.0-rc.*` pareciera
+> incompatible. Por eso cada línea compatible necesita su propia rama con un suelo
+> preliminar explícito, y el límite superior se detiene en la siguiente línea cuya
+> API nadie ha probado.
+
+La guarda sigue disparándose en un runtime fuera de esos rangos — un `0.3.x` futuro, o
+un `0.1.x` anterior a `0.1.6-alpha.2`. **Esa es una decisión de producto; el script
+deliberadamente no la toma por ti.** dsh imprime el comando exacto cuando
+se niega:
 
 ```bash
 dsh plugin --profile web allow-version dsh-unreal-agentlink@0.1.0 --dsh-version 0.2.0-rc.2 --accept-risk

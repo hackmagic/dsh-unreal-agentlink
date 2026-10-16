@@ -57,9 +57,14 @@ npm run build && node scripts/install-dsh-plugin.mjs --profile web --yes
 
 ## 2. 如果安裝器拒絕了（版本守衛）
 
-dsh 有一個產品層級的守衛：當外掛的 `peerDependencies` 與執行環境的 dsh 版本不相容時，安裝會被拒絕。本專案把 `@deepseek-ai/*` 釘在 `0.1.6-alpha.2`，而出貨的 dsh 是 `0.2.0-rc.2`，所以安裝會停在這裡。
+dsh 有一個產品層級的守衛：當外掛的 `peerDependencies` 與執行環境的 dsh 版本不相容時，安裝會被拒絕。本專案把每個 `@deepseek-ai/dsh-*` peer 宣告為 `>=0.1.6-alpha.2 <0.2.0-0 || >=0.2.0-rc.1 <0.3.0`，它同時接受本外掛建置並測試所依據的版本（`0.1.6-alpha.2`）與目前 dsh 出貨的 `0.2.x` 系列 —— 所以在受支援的執行環境上正常安裝**不會**停在這裡。
 
-**那是一個產品決定；腳本刻意不替你作主。** 它會印出確切的指令：
+> 這兩個分支不是裝飾。semver 不會把一個 prerelease 版本匹配到比較符不帶 prerelease 標記的範圍，
+> 所以裸寫 `^0.1.6-alpha.2` 會讓每個 `0.2.0-rc.*` 執行環境都顯得不相容。每條受支援的產品線
+> 因此都需要自己帶顯式 prerelease 下界的分支，而上界則停在沒人測過其 API 的下一條產品線。
+
+守衛仍會在這兩個範圍之外的執行環境上觸發 —— 將來的 `0.3.x`，或比 `0.1.6-alpha.2` 更舊的 `0.1.x`。
+**那是一個產品決定；腳本刻意不替你作主。** dsh 拒絕安裝時會印出確切的指令：
 
 ```bash
 dsh plugin --profile web allow-version dsh-unreal-agentlink@0.1.0 --dsh-version 0.2.0-rc.2 --accept-risk

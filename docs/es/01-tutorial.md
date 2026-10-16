@@ -97,7 +97,7 @@ npm run status:dsh -- --profile web   # what is registered right now (npm passth
 node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
 ```
 
-Se niega a tocar un manifiesto que una DSH en ejecución todavía retiene, y demuestra que la capa está compuesta antes de informar del éxito — con `--dump-config` en todas partes salvo en el perfil `desktop`, que la CLI no compondrá, así que `dsh plugin --profile desktop list` hace sus veces. Si la guarda de dependencias entre pares detiene la instalación, imprime el comando exacto para aceptar el riesgo — **esa decisión es tuya, no la del script**.
+Se niega a tocar un manifiesto que una DSH en ejecución todavía retiene, y demuestra que la capa está compuesta antes de informar del éxito — con `--dump-config` en todas partes salvo en el perfil `desktop`, que la CLI no compondrá, así que `dsh plugin --profile desktop list` hace sus veces. Los rangos de pares declarados cubren tanto la versión contra la que está construido este plugin como la línea `0.2.x` de la que parte el dsh actual, así que la guarda de dependencias entre pares no detiene una instalación normal; si un runtime futuro queda fuera de ellos, dsh imprime el comando exacto para aceptar el riesgo — **esa decisión es tuya, no la del script**.
 
 #### A mano
 

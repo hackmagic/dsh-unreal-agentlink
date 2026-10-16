@@ -94,7 +94,7 @@ npm run status:dsh -- --profile web     # 现在注册了什么（同一个脚�
 node scripts/install-dsh-plugin.mjs --profile web             # 镜像、改 manifest、安装、验证
 ```
 
-它拒绝去动正在运行的 DSH 还持锁的 manifest，并且在回报成功之前先证明层已组装完成：`dsh --profile <profile> --dump-config` 必须包含 `# == dsh-unreal-agentlink`；只有 `desktop` 例外 —— CLI 不会合成该 profile，那里改用 `dsh plugin --profile desktop list` 证明，它读的是同一份包依赖图。如果 peer-dependency 版本闸门拦下安装，它会打印接受风险的确切命令 —— **那个决定是你的，不是脚本的**。
+它拒绝去动正在运行的 DSH 还持锁的 manifest，并且在回报成功之前先证明层已组装完成：`dsh --profile <profile> --dump-config` 必须包含 `# == dsh-unreal-agentlink`；只有 `desktop` 例外 —— CLI 不会合成该 profile，那里改用 `dsh plugin --profile desktop list` 证明，它读的是同一份包依赖图。声明的 peer 范围同时覆盖本插件构建所依据的版本，以及当前 dsh 出厂的 `0.2.x` 系列，所以 peer-dependency 版本闸门不会拦下正常安装；只有将来的运行时落在这些范围之外时，dsh 才会打印接受风险的确切命令 —— **那个决定是你的，不是脚本的**。
 
 另有两条路，都写全了：下面的[手动安装](#手动安装不用脚本)，以及 [INSTALL-ai.md](../zh/INSTALL-ai.md) —— 一份 AI agent 可以阅读并逐步执行的版本。
 

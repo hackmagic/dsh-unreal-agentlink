@@ -70,7 +70,7 @@ npm run status:dsh -- --profile web     # what is registered right now (same scr
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-It refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success: `dsh --profile <profile> --dump-config` must contain `# == dsh-unreal-agentlink`, except on `desktop`, which the CLI will not compose — there the layer is proven through `dsh plugin --profile desktop list`, which reads the same package graph. If the peer-dependency guard stops the install it prints the exact command to accept the risk — **that decision is yours, not the script's**.
+It refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success: `dsh --profile <profile> --dump-config` must contain `# == dsh-unreal-agentlink`, except on `desktop`, which the CLI will not compose — there the layer is proven through `dsh plugin --profile desktop list`, which reads the same package graph. The declared peer ranges cover both the version this plugin is built against and the `0.2.x` line the current dsh ships from, so the peer-dependency guard does not stop a normal install; if a future runtime falls outside them, dsh prints the exact command to accept the risk — **that decision is yours, not the script's**.
 
 Two more paths, both written out: the [manual install](#manual-install-without-the-script) below, and [INSTALL-ai.md](docs/INSTALL-ai.md) — a version an AI agent can read and follow step by step.
 
