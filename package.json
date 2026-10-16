@@ -27,6 +27,8 @@
     "docs": "node scripts/gen-docs.mjs && node scripts/normalize-doc-headers.mjs && node scripts/normalize-doc-links.mjs",
     "install:dsh": "node scripts/install-dsh-plugin.mjs",
     "status:dsh": "node scripts/install-dsh-plugin.mjs --status",
+    "mock:ue": "node tools/mock-ue-editor.mjs",
+    "smoke": "node tools/ual-smoke.mjs",
     "clean": "node -e \"require('fs').rmSync('lib',{recursive:true,force:true})\"",
     "prepare": "npm run clean && npm run build",
     "prepack": "npm run clean && npm run build"

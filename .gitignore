@@ -12,6 +12,10 @@
 # still drop a one-off verifier at the repo root — keep them out of the commit.
 /.verify-*
 
+# `npm run smoke` output: the transcript of a fake-editor run and the PNGs it
+# wrote. Useful to look at, never useful to commit.
+/.smoke/
+
 # GitHub pushes need the local proxy bypassed: `~/.ssh/config` routes github.com
 # through `connect -S 127.0.0.1:1081`, which is not running on this host.
 #   $env:GIT_SSH_COMMAND = 'ssh -o ProxyCommand=none -o BatchMode=yes'
