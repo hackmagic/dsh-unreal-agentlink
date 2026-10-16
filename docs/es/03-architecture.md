@@ -41,7 +41,7 @@ scripts/
   install-dsh-plugin.mjs     registra este plugin en un perfil de dsh (espejo, manifiesto, instalación, verificación)
 docs/                       tutorial / protocolo / arquitectura / referencia de comandos / guía de instalación,
                             ×9 idiomas
-tests/                      9 archivos de prueba, 173 pruebas
+tests/                      10 archivos de prueba, 189 pruebas
 ```
 
 ### Dirección de las dependencias
@@ -258,7 +258,7 @@ lo cual equivale a:
 if (!outcome.ok) throw toUalError(outcome.value);
 ```
 
-Las pruebas viven en 9 archivos, divididos por **el tipo de defecto que pueden detectar**:
+Las pruebas viven en 10 archivos, divididos por **el tipo de defecto que pueden detectar**:
 
 | Archivo | Cubre |
 |---|---|
@@ -271,10 +271,15 @@ Las pruebas viven en 9 archivos, divididos por **el tipo de defecto que pueden d
 | `i18n.test.ts` | la documentación está completa e internamente coherente, en los 9 idiomas |
 | `end-to-end.test.ts` | la cadena de compuertas real + un socket real + esquemas de herramientas reales |
 | `installer.test.ts` | el instalador de perfiles de DSH: manejo de argumentos, las dos entradas del manifiesto, el límite del espejo, el rechazo por bloqueo |
+| `mock-editor.test.ts` | toda la superficie contra un **proceso** real de editor falso: 170 idas y vueltas por socket y las 12 herramientas |
 
 **Por qué `end-to-end.test.ts` tiene que existir**: todas las demás pruebas sustituyen una capa. El error de `REQUIRED_KEYS` — generado, documentado, revisado, nunca importado — no lo detectó ninguna prueba unitaria, porque cada capa era autoconsistente de forma aislada. Solo cablear la cadena de compuertas real a un socket real y alimentarla con un esquema real expone **la costura entre capas**.
 
 Por la misma razón, `tool-output.test.ts` usa el **real** `snapshotJsonValue` + `validateJsonSchemaValue` en lugar de escribir su propia comprobación de esquema — si no, el defecto del `undefined` de `ual_status` se colaría igual.
+
+`mock-editor.test.ts` cierra la última costura, y existe porque la máquina en la que se construyó este plugin **no tiene Unreal Engine instalado en absoluto**. Todas las demás pruebas responden con un objeto `FakeEditor` en proceso — que es la forma correcta para fijar la cadena de compuertas, y es lo que hace `end-to-end.test.ts` — pero un objeto en el mismo proceso no puede demostrar que las tramas sobreviven a un socket real, que un empuje real de `project.info` haga que `ual_status` identifique un editor, ni que los 170 métodos catalogados sean realmente respondibles de extremo a extremo. Así que `tools/mock-ue-editor.mjs` se ejecuta como **proceso hijo**: se conecta como lo hace UEBox, y la prueba lo maneja a través del `UalService` real. `tools/ual-smoke.mjs` es el mismo montaje con una persona al teclado — llama a las 12 herramientas, valida cada resultado contra el esquema de salida de esa misma herramienta, imprime lo que el modelo habría visto y conserva el PNG.
+
+Encontró un defecto real la primera vez que se ejecutó. `ual_logs { pullMessageLog: true }` llamaba a `messagelog.list` con un `limit` que ese handler nunca lee — `UAL_MessageLogCommands.cpp:76` **no toma ningún parámetro** en absoluto — y luego envolvía el *árbol de categorías* que recibía como una única «línea de registro», así que al modelo se le mostraba una fila en blanco fuera lo que fuera que el editor tuviera que decir. Las líneas viven detrás de `messagelog.get`, que necesita un nombre de categoría. La rama de `pullMessageLog` ahora lee el árbol de categorías cuando se le pide uno y las líneas de esa categoría cuando se le da una `category`, y `source` dice cuál de las tres respuestas está viendo quien llama.
 
 ---
 

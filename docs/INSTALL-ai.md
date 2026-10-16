@@ -116,9 +116,12 @@ application itself.
 
 - For the `web` profile: close the running DeepSeek Harness desktop app, or pick
   a profile that is not held.
-- For the `desktop` profile: the CLI is **forbidden** (`bin.js:38`
-  `rejectElectronProfile`); only the Electron app may manage it, or close the app
-  and edit by hand.
+- For the `desktop` profile: the CLI's *boot* command is **forbidden**
+  (`bin.js:112` `rejectElectronProfile`), but `dsh plugin --profile desktop …` is
+  deliberately exempt (`bin.js:119`) — it is the path the Desktop-carried CLI the
+  app itself calls uses. The product asks for the app to be fully quit first,
+  because a running app rewrites the manifest from its own plugin list. Quit it,
+  run the install, and launch Desktop afterwards to mount the layer.
 - The script refuses and names the holder; it does not fight the lock.
 
 ---

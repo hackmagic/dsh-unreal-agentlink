@@ -42,6 +42,15 @@
 
 **UEBox デスクトップアプリは不要。** 同じベンダーの別のクライアントで、たまたま同じ 17860 ポートを使っているだけなので、両方を同時に動かすとポート衝突になる。詳しくは [README の「UEBox は不要」](../readme/README_ja.md#uebox-は不要) を参照。
 
+**Unreal Engine も要らない** —— このプラグインが動くところを見たいだけなら。UEBox はこのブリッジへ*外向きに*接続するので、偽のエディタは応答する WebSocket クライアントにすぎない：
+
+```bash
+npm run smoke     # 本物のサービス + 偽のエディタ：12 個のツールをすべて呼び、各結果を検証する
+npm run mock:ue   # 偽のエディタだけを起動し、手で触ってみる
+```
+
+`tools/mock-ue-editor.mjs` は `ws://127.0.0.1:17860` に接続し、`project.info` と `system.heartbeat` をプッシュし、`log.entry` の行を転送し、`editor.screenshot` 用に本物の PNG を書き出し、カタログ化された 170 メソッドすべてに応答する。以下の手順はすべてこれに対して試せる。
+
 ### UE プロジェクトへの UnrealAgentLink のインストール
 
 1. `UnrealAgentLink` ディレクトリ全体をプロジェクトの `Plugins/` にコピーする（グローバルに入れる場合はエンジンの `Plugins/`）。
@@ -62,7 +71,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 先に進む前に `npm run check` が完全にグリーンでなければならない。それが確かめるのは 3 つ：ソースとテストの両方が型チェックを通ること、振る舞いのテストがすべて通ること、170 コマンドのカタログが C++ のレジストリと 1 件ずつ一致すること。
@@ -81,18 +90,18 @@ npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconci
 
 #### インストールスクリプトを使う
 
-DSH にはローカルの out-of-tree プラグインをインストールするコマンドが同梱されておらず、`dsh plugin --profile desktop` は Electron アプリがその profile を独占管理しているためその場で拒否される（`bin.js:38`）。だからこのリポジトリは 1 つ同梱している：
+DSH にはローカルの out-of-tree プラグインをインストールするコマンドが同梱されていない。だからこのリポジトリは 1 つ同梱している：
 
 ```bash
 npm run status:dsh -- --profile web   # 現在登録されている内容（npm パススルー）
 node scripts/install-dsh-plugin.mjs --profile web            # ミラー、manifest の編集、インストール、検証
 ```
 
-それは `desktop` profile を拒否し、動作中の DSH がまだ保持している manifest に触ることを拒否し、成功を報告する前に layer が合成されていることを証明する。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
+動作中の DSH がまだ保持している manifest には触れず、成功を報告する前に layer が合成されていることを証明する —— `desktop` profile 以外ではどこでも `--dump-config` を使うが、その profile は CLI が合成しないので、代わりに `dsh plugin --profile desktop list` がそれを担う。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
 
 #### 手動でインストールする
 
-根底にある機構は 4 ステップだ。`<profile>` は `web`（または desktop 以外の任意の profile）とする：
+根底にある機構は 4 ステップだ。`<profile>` は `web`（または `desktop`、下記の注意を参照）とする：
 
 ```bash
 npm run build    # ミラーには lib/ が入る。ビルド前のミラーは不完全なプラグインになる
@@ -110,7 +119,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 どちらも必須で、失敗のしかたが違う：`dsh.bundle` を宣言しない列挙されたパッケージは起動時に**大声で失敗する**が、インストールされているのに列挙されていないパッケージは**レイヤーをまったく提供しない**。そして `file:` は作業スペースではなくコピーを指さなければならない —— pnpm はインストール時に見つけたものをコピーするので、半分保存されたソースファイルが DSH が読み込むプラグインになってしまう。
 
-`desktop` profile に CLI 経路はない：Electron アプリは動作中その `package.json` にロックを保持しており、競合者は他の保持者のロックを決して削除しない。GUI のプラグインマネージャを使うか、先にアプリを閉じること。
+`desktop` profile も同じ 4 ステップで、最後の 1 つだけが違う：`dsh --profile desktop …` は拒否され（`bin.js:112` が Electron profile を拒否する）、一方 `dsh plugin --profile desktop …` は意図的に除外されている（`bin.js:119`）ので、Desktop 同梱の CLI 自身が使う経路はこちらだ。だから先にアプリを終了すること —— 製品自身のメッセージがまさにそれを求めている。動作中のアプリはメモリ上のプラグイン一覧から manifest を書き戻すからだ —— その後でインストールを実行し、ステップ 4 の代わりに `dsh plugin --profile desktop list` で証明する。
 
 AI エージェントがインストールを行う場合は、代わりに [INSTALL-ai.md](INSTALL-ai.md) を渡すこと —— それは同じ手順を、読み取りと検証ができるチェックリストとして書いたものだ。
 
@@ -238,11 +247,14 @@ ual_logs { level: "Warning", contains: "Niagara" }
 
 ログリングはデフォルトで空だ —— UE 側のログ転送は**デフォルトで無効**で、エディタ内で `ual.ForwardLogs 1` を実行する必要がある（このプラグインはリモートで有効にできない）。何も返らないとき、`ual_logs` はその旨を伝える。
 
-転送が無効な間は、エンジン自身のメッセージログを使う：
+転送が無効な間は、代わりにエンジン自身のメッセージログを読む。これは**カテゴリツリー**であってフラットなリストではない：エンジンがどのカテゴリを保持しているかを尋ね、次にその中の行を要求する。
 
 ```
-ual_call { method: "messagelog.list", params: { limit: 50 } }
+ual_logs { pullMessageLog: true }                     # エンジンが持つカテゴリ
+ual_logs { pullMessageLog: true, category: "PIE" }    # その中の行
 ```
+
+最初の形は `messagelog.list` を呼ぶ。これは**パラメータをまったく取らず**、`{categories: [{name, label}]}` で答える —— つまりカテゴリが存在することは教えてくれるが、それが何を言ったかは決して教えてくれない。行は `messagelog.get` から来る。これは `category` を 1 つ必要とし、2 番目の形が呼ぶのはこちらだ。どちらも生のペイロードが欲しければ `ual_call` 経由で到達できる。
 
 ---
 

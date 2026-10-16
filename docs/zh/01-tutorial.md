@@ -41,6 +41,15 @@
 
 **不需要 UEBox 桌面版。** 它只是同一厂商的另一个客户端，恰好也连 17860，所以同时跑会抢端口。详见 [README 的「不需要安装 UEBox」](../readme/README_zh.md#不需要安装-uebox)。
 
+**你也不需要 Unreal Engine**，如果你只是想看到本插件跑起来。UEBox 是*往外*拨号连到本桥的，所以一个假编辑器就是一个会应答的 WebSocket 客户端：
+
+```bash
+npm run smoke     # 真实服务 + 假编辑器：调用全部 12 个工具，校验每个结果
+npm run mock:ue   # 只要那个假编辑器，方便手动试探
+```
+
+`tools/mock-ue-editor.mjs` 拨号连 `ws://127.0.0.1:17860`，推送 `project.info` 与 `system.heartbeat`，转发 `log.entry` 行，为 `editor.screenshot` 写出真正的 PNG，并应答全部 170 个已编目方法。下面每一步都可以对着它走一遍。
+
 ### 装 UnrealAgentLink 到 UE 工程
 
 1. 把 `UnrealAgentLink` 整个目录复制到工程的 `Plugins/` 下（或引擎的 `Plugins/` 下，全局生效）。
@@ -61,7 +70,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 173 个测试 + catalog 对账，一条命令```
+npm run check      # typecheck + 189 个测试 + catalog 对账，一条命令```
 
 `npm run check` 必须全绿再往下走。它验证三件事：源码与测试都能通过类型检查、行为测试全过、170 条命令目录与 C++ 注册表逐条对齐。
 
@@ -79,18 +88,18 @@ npm run check      # typecheck + 173 个测试 + catalog 对账，一条命令``
 
 #### 用安装脚本
 
-DSH 没有提供安装「本地未打包插件」的命令，而且 `dsh plugin --profile desktop` 会被直接拒绝（`bin.js:38`，该 profile 只允许 Electron 应用管理）。所以本仓库自带一个：
+DSH 没有提供安装本地、未打包插件的命令，所以本仓库自带一个：
 
 ```bash
 npm run status:dsh -- --profile web   # 先看当前注册情况（npm 参数透传）
 node scripts/install-dsh-plugin.mjs --profile web            # 镜像、改 manifest、安装、验证
 ```
 
-它会拒绝 `desktop` profile，拒绝修改仍被运行中的 DSH 持有的 manifest，并且只在确认配置层真正生效后才报告成功。如果被 peer 依赖守卫拦住，它会打印出接受风险的确切命令——**这个决定是你的，不是脚本的**。
+它拒绝修改仍被运行中的 DSH 持有的 manifest，并且只在确认配置层真正生效后才报告成功 —— 除 `desktop` profile 外处处都走 `--dump-config`，而 CLI 不会合成 `desktop`，那里由 `dsh plugin --profile desktop list` 代劳。如果被 peer 依赖守卫拦住，它会打印出接受风险的确切命令——**这个决定是你的，不是脚本的**。
 
 #### 手动安装
 
-底层机制是四步。`<profile>` 填 `web`（或任何非 desktop 的 profile）：
+底层机制是四步。`<profile>` 填 `web`（也可以填 `desktop`，见下面的说明）：
 
 ```bash
 npm run build    # 镜像里要带 lib/，先构建再镜像，否则装上去的是半个插件
@@ -108,7 +117,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 两处都必需，且失败方式不同：列进 bundles 但没声明 `dsh.bundle` 会在启动时**明确报错**；装好了却没列进 bundles 则**完全不产生配置层**。另外 `file:` 必须指向副本而不是工作区——pnpm 在安装时复制它看到的内容，一个只保存了一半的源文件就会变成 DSH 实际加载的插件。
 
-`desktop` profile 没有命令行路径：Electron 应用运行期间持有它 `package.json` 的锁，而竞争方永远不会删除别人的锁。请用 GUI 自带的插件管理，或先关掉应用。
+`desktop` profile 同样走这四步，只是没有最后一步：`dsh --profile desktop …` 会被拒绝（`bin.js:112` 拒绝 Electron profile），而 `dsh plugin --profile desktop …` 是有意豁免的（`bin.js:119`），Desktop 随附的 CLI 自己走的就是这条路。所以先退出应用 —— 产品自己的提示正是这个要求，因为运行中的应用会用内存里的插件清单重写 manifest —— 然后跑安装，并用 `dsh plugin --profile desktop list` 代替第 4 步来验证。
 
 如果是 AI agent 在装，直接把 [INSTALL-ai.md](INSTALL-ai.md) 交给它——那是同一套流程写成的、它可以逐条核对的清单。
 
@@ -237,11 +246,14 @@ ual_logs { level: "Warning", contains: "Niagara" }
 
 日志环默认是空的 —— UE 侧的日志转发**默认关闭**，需要在编辑器内执行 `ual.ForwardLogs 1`（本插件无法远程开启）。`ual_logs` 返回空时会提示这一点。
 
-转发关闭时用引擎自己的消息日志替代：
+转发关闭时，改用引擎自己的消息日志。它是一棵**类别树**，不是一张平铺列表：先问它持有哪些类别，再问其中一个类别里的行。
 
 ```
-ual_call { method: "messagelog.list", params: { limit: 50 } }
+ual_logs { pullMessageLog: true }                     # 引擎持有的类别
+ual_logs { pullMessageLog: true, category: "PIE" }    # 其中一个类别里的行
 ```
+
+第一种形式调用的是 `messagelog.list`，它**不接收任何参数**，并以 `{categories: [{name, label}]}` 应答 —— 所以它只能告诉你某个类别存在，永远说不出它讲了什么。行来自 `messagelog.get`，它需要一个 `category`；第二种形式调用的就是它。如果想要原始载荷，两者都可以通过 `ual_call` 触达。
 
 ---
 

@@ -43,7 +43,7 @@ scripts/
   install-dsh-plugin.mjs     registriert dieses Plugin in einem dsh-Profil (Spiegel, Manifest, Installation, Prüfung)
 docs/                   Tutorial / Protokoll / Architektur / Befehlsreferenz / Installationsanleitung,
                          ×9 Sprachen
-tests/                  173 Tests in 9 Dateien
+tests/                  189 Tests in 10 Dateien
 ```
 
 ### Abhängigkeitsrichtung
@@ -249,7 +249,7 @@ was gleichbedeutend ist mit:
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 173 tests
+vitest run                         # 189 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
 node scripts/gen-docs.mjs --check  # Befehlsreferenz in 9 Sprachen aktuell
 node scripts/normalize-doc-headers.mjs --check   # Sprachleisten in 54 Dateien kanonisch
@@ -257,7 +257,7 @@ node scripts/normalize-doc-links.mjs --check     # Body-Links lösen ausgehend v
 npm run install:dsh -- --profile web    # dieses Plugin in einem dsh-Profil registrieren
 ```
 
-Die Tests liegen in 9 Dateien, aufgeteilt nach **der Art des Defekts, den sie finden können**:
+Die Tests liegen in 10 Dateien, aufgeteilt nach **der Art des Defekts, den sie finden können**:
 
 | File | Covers |
 |---|---|
@@ -270,10 +270,15 @@ Die Tests liegen in 9 Dateien, aufgeteilt nach **der Art des Defekts, den sie fi
 | `i18n.test.ts` | die Dokumentation ist vollständig und in sich konsistent, in allen 9 Sprachen |
 | `end-to-end.test.ts` | die echte Gate-Kette + ein echter Socket + echte Werkzeugschemas |
 | `installer.test.ts` | der DSH-Profil-Installer: Argumentverarbeitung, die zwei Manifest-Einträge, die Spiegel-Grenze, die Ablehnung bei Sperre |
+| `mock-editor.test.ts` | die gesamte Oberfläche gegen einen echten Fake-Editor-**Prozess**: 170 Socket-Roundtrips und alle 12 Werkzeuge |
 
 **Warum `end-to-end.test.ts` existieren muss**: Jeder andere Test stubbt eine Schicht aus. Der `REQUIRED_KEYS`-Fehler — generiert, dokumentiert, reviewed, nie importiert — wurde von keinem Unit-Test gefangen, weil jede Schicht isoliert in sich konsistent war. Nur die echte Gate-Kette an einen echten Socket zu hängen und sie einem echten Schema zu füttern legt **die Naht zwischen den Schichten** frei.
 
 Aus demselben Grund nutzt `tool-output.test.ts` die **echten** `snapshotJsonValue` + `validateJsonSchemaValue`, statt eine eigene Schema-Prüfung zu schreiben — sonst würde der `ual_status`-`undefined`-Defekt genauso durchschlüpfen.
+
+`mock-editor.test.ts` schließt die letzte Naht, und es existiert, weil auf dem Rechner, auf dem dieses Plugin gebaut wurde, **überhaupt kein Unreal Engine installiert ist**. Jeder andere Test antwortet mit einem prozessinternen `FakeEditor`-Objekt — was die richtige Form ist, um die Gate-Kette festzunageln, und genau das tut `end-to-end.test.ts` —, aber ein Objekt im selben Prozess kann nicht zeigen, dass Frames einen echten Socket überleben, dass ein echter `project.info`-Push `ual_status` einen Editor erkennen lässt oder dass alle 170 katalogisierten Methoden tatsächlich end to end beantwortbar sind. Deshalb läuft `tools/mock-ue-editor.mjs` als **Kindprozess**: Er wählt sich so ein, wie UEBox es tut, und der Test treibt ihn durch den echten `UalService`. `tools/ual-smoke.mjs` ist derselbe Aufbau mit einem Menschen an der Tastatur — es ruft alle 12 Werkzeuge auf, validiert jedes Ergebnis gegen das Ausgabeschema dieses Werkzeugs, gibt aus, was das Modell gesehen hätte, und behält das PNG.
+
+Es hat bei seinem ersten Lauf einen echten Defekt gefunden. `ual_logs { pullMessageLog: true }` rief `messagelog.list` mit einem `limit` auf, das dieser Handler nie liest — `UAL_MessageLogCommands.cpp:76` nimmt **keine Parameter** — und verpackte dann den *Kategorienbaum*, den es zurückbekam, als einzelne „Log-Zeile", sodass dem Modell eine leere Zeile gezeigt wurde, egal was der Editor zu sagen hatte. Die Zeilen liegen hinter `messagelog.get`, das einen Kategorienamen braucht. Der Pull-Zweig liest jetzt den Kategorienbaum, wenn er nach einem gefragt wird, und die Zeilen dieser Kategorie, wenn ihm eine `category` gegeben wird, und `source` sagt, welche der drei Antworten der Aufrufer gerade sieht.
 
 ---
 

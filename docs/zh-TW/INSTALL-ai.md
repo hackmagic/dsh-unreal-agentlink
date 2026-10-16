@@ -102,8 +102,11 @@ install: <path>/package.json.lock is held by pid 18344 (DeepSeek Harness)
 dsh 用一個 `wx` 建立的 `.lock` 兄弟檔保護 profile manifest，而**競爭者永不刪除另一個持有者的鎖**。持有者就是執行中的 dsh 應用程式本身。
 
 - 對 `web` profile：關掉執行中的 DeepSeek Harness 桌面應用程式，或換一個沒有被持有的 profile。
-- 對 `desktop` profile：CLI 是**被禁止的**（`bin.js:38`
-  `rejectElectronProfile`）；只有 Electron 應用程式能管理它，或者關掉應用程式後手動編輯。
+- 對 `desktop` profile：CLI 的*啟動*命令是**被禁止的**（`bin.js:112`
+  `rejectElectronProfile`），但 `dsh plugin --profile desktop …` 是有意豁免的
+  （`bin.js:119`）—— 應用程式自己呼叫的 Desktop 隨附 CLI 走的就是這條路。產品要求先把應用程式完全關掉，
+  因為執行中的應用程式會用自己的插件清單重寫 manifest。把它關掉，跑安裝，
+  裝完後再啟動 Desktop 以掛載該 layer。
 - 腳本會拒絕並點名持有者；它不會去搶那個鎖。
 
 ---

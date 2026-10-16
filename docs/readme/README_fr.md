@@ -48,7 +48,7 @@ Trois parties : mettre le plugin C++ UnrealAgentLink dans votre projet UE, insta
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 `npm run check` doit être entièrement vert avant d'aller plus loin — il vérifie que les sources et les tests compilent, que les tests de comportement passent, et que le catalogue des 170 commandes s'aligne sur le registre C++, entrée par entrée.
@@ -63,14 +63,14 @@ Puis enregistrez-le comme bundle DSH. `package.json` déclare `dsh.bundle.patch:
 
 > **Empilement de configuration** : une couche ultérieure **remplace** entièrement le `config` de cette ligne au lieu de le fusionner en profondeur. Pour surcharger quoi que ce soit, réécrivez toutes les clés que vous voulez conserver.
 
-DSH ne fournit aucune commande qui installe un plugin local hors arbre, et `dsh plugin --profile desktop` est refusé d'emblée parce que l'application Electron gère ce profil exclusivement (`bin.js:38`). Ce dépôt fournit donc un programme d'installation qui fait le travail puis s'efface devant le vrai :
+DSH ne fournit aucune commande qui installe un plugin local hors arbre, donc ce dépôt fournit un programme d'installation qui fait le travail puis s'efface devant le vrai :
 
 ```bash
 npm run status:dsh -- --profile web     # ce qui est enregistré à l'instant (même script, passthrough npm)
 node scripts/install-dsh-plugin.mjs --profile web             # miroir, modifier le manifeste, installer, vérifier
 ```
 
-Il refuse le profil `desktop`, refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès (`dsh --profile web --dump-config` doit contenir `# == dsh-unreal-agentlink`). Si le garde de peer-dependencies arrête l'installation, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
+Il refuse de toucher à un manifeste qu'un DSH en cours d'exécution détient encore, et prouve que la couche est composée avant d'annoncer le succès : `dsh --profile <profile> --dump-config` doit contenir `# == dsh-unreal-agentlink`, sauf sur `desktop`, que la CLI ne composera pas — là, la couche est prouvée via `dsh plugin --profile desktop list`, qui lit le même graphe de paquets. Si le garde de peer-dependencies arrête l'installation, il affiche la commande exacte pour accepter le risque — **cette décision est la vôtre, pas celle du script**.
 
 Deux autres chemins, tous deux écrits : l'[installation manuelle](#installation-manuelle-sans-le-script) ci-dessous, et [INSTALL-ai.md](../fr/INSTALL-ai.md) — une version qu'un agent IA peut lire et suivre étape par étape.
 
@@ -125,7 +125,7 @@ Une fois le plugin dans votre projet, il fonctionne seul : `StartupModule` appel
 
 ### Installation manuelle sans le script
 
-Le script ci-dessus est une commodité ; le mécanisme sous-jacent tient en quatre lignes de manifeste plus une commande produit. Où `<profile>` est `web` (ou n'importe quel profil non-desktop) et `$DSH_HOME` est `~/.dsh` par défaut :
+Le script ci-dessus est une commodité ; le mécanisme sous-jacent tient en quatre lignes de manifeste plus une commande produit. Où `<profile>` est `web` — `desktop` fonctionne aussi, avec la seule substitution signalée à la fin de cette section — et `$DSH_HOME` est `~/.dsh` par défaut :
 
 ```bash
 # 1. construire une fois, puis ne copier que ce que npm pack embarque
@@ -143,6 +143,8 @@ dsh plugin --profile <profile> install
 dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 ```
 
+L'étape 4 est la seule que `desktop` ne peut pas exécuter : la CLI refuse de démarrer ce profil depuis la ligne de commande, prouvez-la donc plutôt avec `dsh plugin --profile desktop list` (voir ci-dessous).
+
 Les deux entrées, dans `<profile>/package.json` :
 
 ```json
@@ -154,7 +156,7 @@ Les deux sont obligatoires et échouent différemment : un paquet listé qui ne 
 
 **Pourquoi `file:` pointe sur une copie et non sur votre espace de travail** : pnpm copie ce qu'il trouve au moment de l'installation, donc un fichier source à moitié enregistré — ou un `lib/` supprimé après un build raté — devient le plugin que DSH charge. Miroir d'abord, installation ensuite.
 
-**Le profil `desktop` n'a pas de chemin CLI.** `bin.js:38` le rejette parce que l'application Electron le gère exclusivement, et cette application détient un verrou `wx` sur `desktop/package.json` pendant qu'elle tourne (`dsh-atomic-write`, et un concurrent ne supprime jamais le verrou d'un autre détenteur). Vos options sont le gestionnaire de plugins de l'interface graphique, ou fermer l'application et faire les quatre étapes ci-dessus à la main. Installer d'abord dans `web` puis copier le résultat par-dessus est la voie la moins invasive.
+**Le profil `desktop` est une cible prise en charge, avec une lacune CLI.** `dsh --profile desktop …` est refusé d'emblée (`bin.js:112`, `rejectElectronProfile`) parce que l'application Electron détient le cycle de vie de ce profil — mais le garde est délibérément ignoré pour `dsh plugin` (`bin.js:119`), et la CLI embarquée dans Desktop que l'application elle-même appelle en dépend exactement (`dsh-desktop-host/lib/cli.js:91-104` passe `manageDesktopProfile: true`). Installez donc dans `desktop` comme montré ci-dessus, avec deux changements : l'étape 4 devient `dsh plugin --profile desktop list`, et l'application doit d'abord être entièrement fermée. Le message du produit lui-même le précise — *« Ouvrez DeepSeek Harness Desktop une fois pour initialiser son profil, puis fermez-le entièrement avant d'exécuter `dsh plugin --profile desktop` »* — parce qu'une application en cours d'exécution réécrit le manifeste à partir de sa liste de plugins en mémoire, si bien qu'une modification faite en dessous peut être perdue. Relancez Desktop ensuite pour monter la couche.
 
 ---
 
@@ -258,7 +260,7 @@ scripts/                    Extraction et réconciliation du catalogue, généra
                             le jeu de langues, et le programme d'installation de profils DSH
 docs/                       Tutoriel / protocole / architecture / référence des commandes / guide d'installation,
                             en 9 langues
-tests/                      173 tests
+tests/                      189 tests
 ```
 
 ### Fichiers générés : ne pas modifier à la main
@@ -275,8 +277,8 @@ Une table maintenue à la main que personne n'importe est une classe de défauts
 ### Tests et contrôles
 
 ```bash
-npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
-npm test                            # 173 passed
+npm run check                       # typecheck (src + tests) + 189 passed + catalog + doc reconciliation
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
 node scripts/normalize-doc-headers.mjs --check   # are the language bars canonical in all 54 files
@@ -285,11 +287,25 @@ npm run docs                        # regenerate + rewrite the 54 doc headers an
 npm run install:dsh -- --profile web    # register this plugin with a dsh profile (see Installation)
 ```
 
-Les neuf fichiers de tests sont divisés selon **le type de défaut qu'ils peuvent détecter**, chacun pour une raison — voir [architecture §11](../fr/03-architecture.md#11-stratégie-de-vérification).
+Les dix fichiers de tests sont divisés selon **le type de défaut qu'ils peuvent détecter**, chacun pour une raison — voir [architecture §11](../fr/03-architecture.md#11-stratégie-de-vérification).
 
 `requires` n'est pas écrit à la main : il est dérivé des propres messages `SendError(..., 400, "Missing field: X")` des gestionnaires (28 sites), parce qu'une clé requise erronée fait rejeter par le pont un appel *valide* avant que le moteur ne le voie. Le résultat atterrit dans `method-data.ts` sous le nom `REQUIRED_KEYS`, et `requiresOf()` de `methods.ts` l'intègre à l'utilisation runtime (le rejet anticipé dans `service.call()`, la ligne `REQUIRED:` de `ual_schema` et les indices d'erreur passent tous par cette unique fonction).
 
 Cela **ne fait que restreindre, jamais élargir** : un message contenant `or` (`"Missing field: name or path"`) est ignoré entièrement, et les clés récupérées depuis une fonction appelée dans le même fichier sont écartées comme locales à une branche — voir `REQUIRED_DROPPED` dans `scripts/extract-methods.mjs`, où chaque entrée cite son numéro de ligne C++. Donc « aucune clé récupérée » est le comportement sûr par défaut, pas un contrôle manqué.
+
+### Tester sans Unreal Engine
+
+Vous n'avez besoin ni d'un éditeur, ni d'UEBox, pour faire tourner ce plugin — et la jointure, c'est le protocole lui-même : UEBox se connecte **vers l'extérieur** à ce pont, donc un faux éditeur n'est qu'un client WebSocket qui répond.
+
+```bash
+npm run smoke                        # démarrer le vrai service, connecter un faux éditeur,
+                                     # appeler les 12 outils, valider chaque résultat
+npm run smoke -- --out /tmp/ual      # garder la transcription et les PNG ailleurs
+npm run smoke -- --method actor.get  # une seule méthode du catalogue, affichée brute
+npm run mock:ue                      # juste le faux éditeur, pour bidouiller à la main
+```
+
+`tools/mock-ue-editor.mjs` est un vrai processus, pas un stub : il se connecte à `ws://127.0.0.1:17860`, pousse `project.info` et `system.heartbeat`, relaie les lignes `log.entry`, écrit un vrai PNG pour `editor.screenshot` et répond à **toutes les 170 méthodes cataloguées** — des corps réalistes pour les familles qui comptent, et un corps portant les clés de résultat documentées pour le reste. `tools/ual-smoke.mjs` démarre le même `UalService` que `apply()`, appelle chaque outil via son vrai `execute`, valide chaque valeur contre le schéma de sortie de cet outil et affiche ce que le modèle aurait vu. C'est le jumeau manuel de `tests/mock-editor.test.ts` ; les deux sont décrits dans [architecture §11](../fr/03-architecture.md#11-stratégie-de-vérification).
 
 ---
 

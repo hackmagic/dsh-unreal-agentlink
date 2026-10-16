@@ -43,7 +43,7 @@ scripts/
   install-dsh-plugin.mjs     registers this plugin with a dsh profile (mirror, manifest, install, verify)
 docs/                   tutorial / protocol / architecture / command reference / install guide,
                          ×9 languages
-tests/                  173 tests in 9 files
+tests/                  189 tests in 10 files
 ```
 
 ### Dependency direction
@@ -252,7 +252,7 @@ which is equivalent to:
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 173 tests
+vitest run                         # 189 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
 node scripts/gen-docs.mjs --check  # command reference current in 9 languages
 node scripts/normalize-doc-headers.mjs --check   # language bars canonical in 54 files
@@ -260,7 +260,7 @@ node scripts/normalize-doc-links.mjs --check     # body links resolve from where
 npm run install:dsh -- --profile web    # register this plugin with a dsh profile
 ```
 
-The tests live in 9 files, divided by **the kind of defect they can find**:
+The tests live in 10 files, divided by **the kind of defect they can find**:
 
 | File | Covers |
 |---|---|
@@ -272,13 +272,18 @@ The tests live in 9 files, divided by **the kind of defect they can find**:
 | `tool-output.test.ts` | every tool's real return value through the two-stage pipeline |
 | `i18n.test.ts` | the documentation is complete and internally consistent, in all 9 languages |
 | `end-to-end.test.ts` | the real gate chain + a real socket + real tool schemas |
-| `installer.test.ts` | the DSH profile installer: argument handling, the two manifest entries, the mirror boundary, the lock refusal |
+| `installer.test.ts` | the DSH profile installer: argument handling, the two manifest entries, the mirror boundary, the lock refusal, the `desktop` path proven through `pnpm list` |
+| `mock-editor.test.ts` | the whole surface against a real fake editor **process**: 170 socket round-trips and all 12 tools |
 
 **Why `end-to-end.test.ts` has to exist**: every other test stubs out one layer. The `REQUIRED_KEYS` bug — generated, documented, reviewed, never imported — was caught by no unit test, because each layer was self-consistent in isolation. Only wiring the real gate chain to a real socket and feeding it to a real schema exposes **the seam between layers**.
 
 For the same reason, `tool-output.test.ts` uses the **real** `snapshotJsonValue` + `validateJsonSchemaValue` rather than writing its own schema check — otherwise the `ual_status` `undefined` defect would slip through just the same.
 
-`installer.test.ts` exists for a third reason: the installer is the one script here that writes **outside** this repository, so nothing else in the suite would notice if it broke. It runs the real script against a scratch profile directory (`--profile-dir`) with a stub `dsh` that prints the layer marker, which is the whole installer minus the product it defers to. What it pins down is exactly the things that are invisible in a unit test: a bundle needs **both** a dependency entry and a `dsh.profile.bundles` entry, and they fail differently (listed-but-not-a-bundle fails loud at boot; installed-but-not-listed contributes no layer at all); the manifest keeps every key the user already had; a second run changes nothing; the mirror copies only what `npm pack` ships, so `.audit-tmp/` cannot become the plugin dsh loads; and a locked manifest is refused rather than fought. The desktop refusal is pinned too, because `bin.js:38` means an installer that claimed otherwise would write a manifest the operator cannot activate.
+`installer.test.ts` exists for a third reason: the installer is the one script here that writes **outside** this repository, so nothing else in the suite would notice if it broke. It runs the real script against a scratch profile directory (`--profile-dir`) with a stub `dsh` that prints the layer marker, which is the whole installer minus the product it defers to. What it pins down is exactly the things that are invisible in a unit test: a bundle needs **both** a dependency entry and a `dsh.profile.bundles` entry, and they fail differently (listed-but-not-a-bundle fails loud at boot; installed-but-not-listed contributes no layer at all); the manifest keeps every key the user already had; a second run changes nothing; the mirror copies only what `npm pack` ships, so `.audit-tmp/` cannot become the plugin dsh loads; and a locked manifest is refused rather than fought. The `desktop` profile is pinned too, and it is the trap this suite was built to catch: the first version of the installer — and every document around it — refused `desktop` outright on the strength of `bin.js:38`, a citation of the *boot* guard read as if it covered `dsh plugin`. It does not (`bin.js:119` exempts it, and the product's own `requireDesktopProfile` message tells operators to run `dsh plugin --profile desktop`), so the refusal removed the only CLI path into the profile the Desktop app actually uses. The tests now pin the opposite: the installer accepts `desktop`, warns that the app must be quit first, and proves the layer through `pnpm list` rather than `--dump-config`, which `bin.js:112` will never produce for that profile.
+
+`mock-editor.test.ts` closes the last seam, and it exists because the machine this plugin was built on has **no Unreal Engine installed at all**. Every other test answers with an in-process `FakeEditor` object — which is the right shape for pinning the gate chain, and is what `end-to-end.test.ts` does — but an object in the same process cannot show that frames survive a real socket, that a real `project.info` push makes `ual_status` identify an editor, or that all 170 cataloged methods are actually answerable end to end. So `tools/mock-ue-editor.mjs` runs as a **child process**: it dials in the way UEBox does, and the test drives it through the real `UalService`. `tools/ual-smoke.mjs` is the same rig with a human at the keyboard — it calls all 12 tools, validates each result against that tool's own output schema, prints what the model would have seen, and keeps the PNG.
+
+It found a real defect the first time it ran. `ual_logs { pullMessageLog: true }` called `messagelog.list` with a `limit` that handler never reads — `UAL_MessageLogCommands.cpp:76` takes **no parameters** at all — and then wrapped the *category tree* it got back as a single "log line", so the model was shown one blank row whatever the editor had to say. The lines live behind `messagelog.get`, which needs a category name. The pull branch now reads the category tree when it is asked for one and that category's lines when it is given a `category`, and `source` says which of the three answers the caller is looking at.
 
 `i18n.test.ts` is here for the same reason and about a different seam. Everything under `src/` knows nothing about `docs/`, so no existing test could notice a translation that forgot a language in its switcher bar or linked to a heading it had renamed. It reads the docs as data instead: every language has the five files, every bar lists all nine languages and bolds exactly its own, every relative link resolves to a real file, and every `#anchor` resolves to a real heading. That last one is the interesting one — anchors are derived from the *translated* heading text, so a translator rewording "Verification strategy" silently invalidates every link into that section, with no error anywhere. `gen-docs.mjs --check` guards the generated command references the same way; `i18n.test.ts` shells out to it rather than re-implementing the render.
 

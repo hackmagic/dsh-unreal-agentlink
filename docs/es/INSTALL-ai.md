@@ -116,9 +116,13 @@ en ejecución.
 
 - Para el perfil `web`: cierra la aplicación de escritorio DeepSeek Harness en ejecución, o elige
   un perfil que no esté retenido.
-- Para el perfil `desktop`: la CLI está **prohibida** (`bin.js:38`
-  `rejectElectronProfile`); solo la aplicación Electron puede gestionarlo, o cierra la aplicación
-  y edítalo a mano.
+- Para el perfil `desktop`: el comando de *arranque* de la CLI está **prohibido**
+  (`bin.js:112` `rejectElectronProfile`), pero `dsh plugin --profile desktop …` está
+  deliberadamente exento (`bin.js:119`) — es la ruta que usa la propia CLI que lleva
+  Desktop y que la aplicación misma invoca. El producto pide cerrar la aplicación por
+  completo antes, porque una aplicación en ejecución reescribe el manifiesto desde su
+  propia lista de plugins. Ciérrala, ejecuta la instalación y lanza Desktop después
+  para montar la capa.
 - El script se niega y nombra al portador; no lucha contra el bloqueo.
 
 ---

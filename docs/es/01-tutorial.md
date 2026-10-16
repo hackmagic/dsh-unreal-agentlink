@@ -42,6 +42,15 @@ Antes de tocar nada, estos cuatro hechos determinan cómo se escribe cada operac
 
 **No necesitas la aplicación de escritorio UEBox.** Es otro cliente del mismo proveedor que por casualidad también usa el puerto 17860, así que ejecutar ambos a la vez es un conflicto de puertos. Consulta [README § «No necesita UEBox»](../readme/README_es.md#no-necesita-uebox).
 
+**Tampoco necesitas Unreal Engine** si lo único que quieres es ver funcionar este plugin. UEBox se conecta *hacia fuera* a este puente, así que un editor falso no es más que un cliente WebSocket que responde:
+
+```bash
+npm run smoke     # servicio real + editor falso: llama a las 12 herramientas, valida cada resultado
+npm run mock:ue   # solo el editor falso, para hurgar a mano
+```
+
+`tools/mock-ue-editor.mjs` se conecta a `ws://127.0.0.1:17860`, envía `project.info` y `system.heartbeat`, reenvía las líneas `log.entry`, escribe un PNG real para `editor.screenshot` y responde a los 170 métodos catalogados. Todos los pasos de abajo se pueden seguir contra él.
+
 ### Instalación de UnrealAgentLink en un proyecto de UE
 
 1. Copia todo el directorio `UnrealAgentLink` en el `Plugins/` del proyecto (o en el `Plugins/` del motor para una instalación global).
@@ -62,7 +71,7 @@ El plugin habilita automáticamente sus dos dependencias distribuidas con el mot
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 173 tests + catalog reconciliation, one command
+npm run check      # typecheck + 189 tests + catalog reconciliation, one command
 ```
 
 `npm run check` debe estar completamente en verde antes de continuar. Verifica tres cosas: que las fuentes y las pruebas pasan la comprobación de tipos, que todas las pruebas de comportamiento pasan, y que el catálogo de 170 comandos coincide con el registro de C++ entrada por entrada.
@@ -81,18 +90,18 @@ npm run check      # typecheck + 173 tests + catalog reconciliation, one command
 
 #### Con el script de instalación
 
-DSH no distribuye ningún comando que instale un plugin local fuera del árbol, y `dsh plugin --profile desktop` se rechaza directamente porque la aplicación Electron gestiona ese perfil en exclusiva (`bin.js:38`). Así que este repositorio incluye uno:
+DSH no distribuye ningún comando que instale un plugin local fuera del árbol, así que este repositorio incluye uno:
 
 ```bash
 npm run status:dsh -- --profile web   # what is registered right now (npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
 ```
 
-Rechaza el perfil `desktop`, se niega a tocar un manifiesto que una DSH en ejecución todavía retiene, y demuestra que la capa está compuesta antes de informar del éxito. Si la guarda de dependencias entre pares detiene la instalación, imprime el comando exacto para aceptar el riesgo — **esa decisión es tuya, no la del script**.
+Se niega a tocar un manifiesto que una DSH en ejecución todavía retiene, y demuestra que la capa está compuesta antes de informar del éxito — con `--dump-config` en todas partes salvo en el perfil `desktop`, que la CLI no compondrá, así que `dsh plugin --profile desktop list` hace sus veces. Si la guarda de dependencias entre pares detiene la instalación, imprime el comando exacto para aceptar el riesgo — **esa decisión es tuya, no la del script**.
 
 #### A mano
 
-El mecanismo subyacente son cuatro pasos. Donde `<profile>` es `web` (o cualquier perfil que no sea desktop):
+El mecanismo subyacente son cuatro pasos, donde `<profile>` es `web` (o `desktop`, consulta la nota de abajo):
 
 ```bash
 npm run build    # the mirror ships lib/, and a mirror made before the build is a partial plugin
@@ -110,7 +119,7 @@ más dos entradas en `<profile>/package.json`:
 
 Ambas son obligatorias y fallan de forma distinta: un paquete listado que no declara `dsh.bundle` falla **ruidosamente** al arrancar, mientras que un paquete instalado que no está listado no aporta **ninguna capa**. Y `file:` debe apuntar a una copia, no a tu espacio de trabajo — pnpm copia lo que encuentra en el momento de la instalación, así que un archivo fuente guardado a medias se convierte en el plugin que DSH carga.
 
-El perfil `desktop` no tiene ruta por CLI: la aplicación Electron retiene un bloqueo sobre su `package.json` mientras se ejecuta, y un contendiente nunca borra el bloqueo de otro portador. Usa el gestor de plugins de la GUI, o cierra primero la aplicación.
+El perfil `desktop` sigue los mismos cuatro pasos, menos el último: `dsh --profile desktop …` se rechaza (`bin.js:112` rechaza el perfil de Electron), mientras que `dsh plugin --profile desktop …` está deliberadamente exento (`bin.js:119`) y es la ruta que usa la propia CLI que lleva Desktop. Así que cierra primero la aplicación — el propio mensaje del producto pide exactamente eso, porque una aplicación en ejecución reescribe el manifiesto desde su lista de plugins en memoria — luego ejecuta la instalación y demuéstrala con `dsh plugin --profile desktop list` en lugar del paso 4.
 
 Si es un agente de IA quien hace la instalación, entrégale en su lugar [INSTALL-ai.md](INSTALL-ai.md) — es el mismo procedimiento escrito como una lista de comprobaciones que puede leer y verificar.
 
@@ -225,11 +234,14 @@ El editor dibuja una insignia de "AI is editing" en el navegador de contenido, y
 
 El anillo de registros está vacío por defecto — el reenvío de registros del lado de UE está **desactivado por defecto** y requiere ejecutar `ual.ForwardLogs 1` dentro del editor (este plugin no puede activarlo de forma remota). `ual_logs` lo indica cuando no devuelve nada.
 
-Con el reenvío desactivado, usa en su lugar el registro de mensajes del propio motor:
+Con el reenvío desactivado, usa en su lugar el registro de mensajes del propio motor. Es un **árbol de categorías**, no una lista plana: pregunta primero qué categorías contiene, y luego pide las líneas dentro de una.
 
 ```
-ual_logs { level: "Warning" }
+ual_logs { pullMessageLog: true }                     # las categorías que tiene el motor
+ual_logs { pullMessageLog: true, category: "PIE" }    # las líneas dentro de una
 ```
+
+La primera forma llama a `messagelog.list`, que **no toma ningún parámetro** y responde con `{categories: [{name, label}]}` — así que puede decirte que una categoría existe, nunca lo que dijo. Las líneas vienen de `messagelog.get`, que necesita una `category`; eso es lo que llama la segunda forma. Ambas son accesibles a través de `ual_call` si quieres la carga útil en bruto.
 
 ---
 

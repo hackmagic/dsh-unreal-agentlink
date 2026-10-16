@@ -72,7 +72,7 @@ Von da an wählt der Editor von selbst hinaus: `StartupModule` ruft unbedingt `I
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 `npm run check` muss vollständig grün sein, bevor es weitergeht — es prüft, dass Quellen und Tests typechecken, die Verhaltenstests durchlaufen und der 170-Befehle-Katalog Eintrag für Eintrag zur C++-Registry passt.
@@ -87,14 +87,14 @@ Registrieren Sie es dann als DSH-Bundle. `package.json` deklariert `dsh.bundle.p
 
 > **Konfigurationsschichtung**: Eine spätere Schicht **ersetzt** die `config` dieser Zeile vollständig, statt sie tief zusammenzuführen. Um etwas zu überschreiben, müssen Sie jeden Schlüssel, den Sie behalten wollen, neu schreiben.
 
-DSH liefert keinen Befehl, der ein lokales Plugin außerhalb des Baumes installiert, und `dsh plugin --profile desktop` wird rundweg abgewiesen, weil die Electron-App dieses Profil exklusiv verwaltet (`bin.js:38`). Dieses Repository liefert daher einen Installer, der die Arbeit macht und sich dann dem echten unterordnet:
+DSH liefert keinen Befehl, der ein lokales Plugin außerhalb des Baumes installiert, daher liefert dieses Repository einen Installer, der die Arbeit macht und sich dann dem echten unterordnet:
 
 ```bash
 npm run status:dsh -- --profile web     # was gerade registriert ist (dasselbe Skript, npm-Passthrough)
 node scripts/install-dsh-plugin.mjs --profile web             # spiegeln, Manifest bearbeiten, installieren, prüfen
 ```
 
-Er verweigert das Profil `desktop`, verweigert das Anfassen eines Manifests, das ein laufendes DSH noch hält, und beweist, dass die Schicht zusammengesetzt ist, bevor er Erfolg meldet (`dsh --profile web --dump-config` muss `# == dsh-unreal-agentlink` enthalten). Stoppt die Peer-Dependency-Wache die Installation, gibt er den genauen Befehl aus, um das Risiko zu akzeptieren — **diese Entscheidung ist Ihre, nicht die des Skripts**.
+Er verweigert das Anfassen eines Manifests, das ein laufendes DSH noch hält, und beweist, dass die Schicht zusammengesetzt ist, bevor er Erfolg meldet: `dsh --profile <profile> --dump-config` muss `# == dsh-unreal-agentlink` enthalten, außer bei `desktop`, das die CLI nicht zusammensetzt — dort wird die Schicht über `dsh plugin --profile desktop list` nachgewiesen, was denselben Paketgraphen liest. Stoppt die Peer-Dependency-Wache die Installation, gibt er den genauen Befehl aus, um das Risiko zu akzeptieren — **diese Entscheidung ist Ihre, nicht die des Skripts**.
 
 Zwei weitere Wege, beide ausformuliert: die [manuelle Installation](#manuelle-installation-ohne-das-skript) unten und [INSTALL-ai.md](../de/INSTALL-ai.md) — eine Version, die ein KI-Agent lesen und Schritt für Schritt befolgen kann.
 ### Schritt 3 — Projekt öffnen und prüfen
@@ -122,7 +122,7 @@ ual_call { method: "level.get_current" }
 
 ### Manuelle Installation ohne das Skript
 
-Das Skript oben ist eine Bequemlichkeit; der zugrunde liegende Mechanismus ist vier Zeilen Manifest plus ein Produktbefehl. Dabei ist `<profile>` gleich `web` (oder ein beliebiges Nicht-desktop-Profil) und `$DSH_HOME` ist standardmäßig `~/.dsh`:
+Das Skript oben ist eine Bequemlichkeit; der zugrunde liegende Mechanismus ist vier Zeilen Manifest plus ein Produktbefehl. Dabei ist `<profile>` gleich `web` — `desktop` funktioniert ebenfalls, mit der einen Ersetzung, die am Ende dieses Abschnitts genannt wird — und `$DSH_HOME` ist standardmäßig `~/.dsh`:
 
 ```bash
 # 1. einmal bauen, dann nur das kopieren, was npm pack ausliefert
@@ -140,6 +140,8 @@ dsh plugin --profile <profile> install
 dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 ```
 
+Schritt 4 ist der einzige Schritt, den `desktop` nicht ausführen kann: Die CLI weigert sich, dieses Profil von der Kommandozeile aus zu starten, daher weisen Sie es stattdessen mit `dsh plugin --profile desktop list` nach (siehe unten).
+
 Die zwei Einträge, in `<profile>/package.json`:
 
 ```json
@@ -151,7 +153,7 @@ Beide sind verpflichtend, und sie scheitern unterschiedlich: ein aufgelistetes P
 
 **Warum `file:` auf eine Kopie zeigt und nicht auf Ihren Arbeitsbereich**: pnpm kopiert, was es zum Installationszeitpunkt vorfindet, also wird eine halb gespeicherte Quelldatei — oder ein gelöschtes `lib/` nach einem gescheiterten Build — zu dem Plugin, das DSH lädt. Zuerst spiegeln, dann installieren.
 
-**Das Profil `desktop` hat keinen CLI-Weg.** `bin.js:38` weist es ab, weil die Electron-Anwendung es exklusiv verwaltet, und diese App hält eine `wx`-Sperre auf `desktop/package.json`, während sie läuft (`dsh-atomic-write`, und ein Konkurrent löscht niemals die Sperre eines anderen Halters). Ihre Möglichkeiten sind der Plugin-Manager der GUI selbst, oder die App zu schließen und die vier Schritte oben von Hand auszuführen. Zuerst in `web` zu installieren und das Ergebnis herüberzukopieren ist am wenigsten invasiv.
+**Das Profil `desktop` ist ein unterstütztes Ziel, mit einer CLI-Lücke.** `dsh --profile desktop …` wird rundweg abgewiesen (`bin.js:112`, `rejectElectronProfile`), weil die Electron-App die Lebensdauer dieses Profils besitzt — doch die Wache wird für `dsh plugin` bewusst übersprungen (`bin.js:119`), und die von Desktop mitgelieferte CLI, die die App selbst aufruft, hängt genau davon ab (`dsh-desktop-host/lib/cli.js:91-104` übergibt `manageDesktopProfile: true`). Installieren Sie also wie oben gezeigt in `desktop`, mit zwei Änderungen: Schritt 4 wird `dsh plugin --profile desktop list`, und die App muss vorher vollständig beendet werden. Die Meldung des Produkts selbst sagt das ausdrücklich — *„Öffnen Sie DeepSeek Harness Desktop einmal, um sein Profil zu initialisieren, und beenden Sie es dann vollständig, bevor Sie `dsh plugin --profile desktop` ausführen"* —, weil eine laufende App das Manifest aus ihrer speicherinternen Plugin-Liste neu schreibt, sodass eine darunter vorgenommene Änderung verloren gehen kann. Starten Sie Desktop danach, um die Schicht einzubinden.
 
 ---
 
@@ -255,7 +257,7 @@ scripts/                    Catalog extraction and reconciliation, doc generatio
                               the language set, and the DSH profile installer
 docs/                       Tutorial / protocol / architecture / command reference / install guide,
                               in 9 languages
-tests/                      173 tests
+tests/                      189 tests
 ```
 
 ### Generierte Dateien: nicht von Hand bearbeiten
@@ -272,8 +274,8 @@ Eine handgepflegte Tabelle, die niemand importiert, ist eine wiederkehrende Defe
 ### Tests und Prüfungen
 
 ```bash
-npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
-npm test                            # 173 passed
+npm run check                       # typecheck (src + tests) + 189 passed + catalog + doc reconciliation
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
 node scripts/normalize-doc-headers.mjs --check   # are the language bars canonical in all 54 files
@@ -282,11 +284,25 @@ npm run docs                        # regenerate + rewrite the 54 doc headers an
 npm run install:dsh -- --profile web    # register this plugin with a dsh profile (see Installation)
 ```
 
-Die neun Testdateien sind nach **der Art des Defekts, den sie finden können** aufgeteilt, jede aus einem Grund — siehe [Architektur §11](../de/03-architecture.md#11-verifikationsstrategie).
+Die zehn Testdateien sind nach **der Art des Defekts, den sie finden können** aufgeteilt, jede aus einem Grund — siehe [Architektur §11](../de/03-architecture.md#11-verifikationsstrategie).
 
 `requires` ist nicht handgeschrieben: Es wird aus den eigenen `SendError(..., 400, "Missing field: X")`-Meldungen der Handler abgeleitet (28 Stellen), weil ein falscher Pflichtschlüssel die Brücke einen *gültigen* Aufruf ablehnen lässt, bevor die Engine ihn sieht. Das Ergebnis landet in `method-data.ts` als `REQUIRED_KEYS`, und `requiresOf()` aus `methods.ts` führt es zur Laufzeit zusammen (die frühe Ablehnung in `service.call()`, die `REQUIRED:`-Zeile in `ual_schema` und die Fehlerhinweise laufen alle über diese eine Funktion).
 
 Es **verengt absichtlich nur, erweitert nie**: Eine Meldung, die `or` enthält (`"Missing field: name or path"`), wird vollständig übersprungen, und aus einer im selben File aufgerufenen Funktion geerntete Schlüssel werden als zweig-lokal fallengelassen — siehe `REQUIRED_DROPPED` in `scripts/extract-methods.mjs`, wo jeder Eintrag seine C++-Zeilennummer nennt. „Keine Schlüssel geerntet" ist also der sichere Standard, keine verpasste Prüfung.
+
+### Testen ohne Unreal Engine
+
+Sie brauchen weder einen Editor noch UEBox, um dieses Plugin laufen zu lassen — und die Naht ist das Protokoll selbst: UEBox wählt sich **hinaus** zu dieser Brücke, ein Fake-Editor ist also nur ein WebSocket-Client, der antwortet.
+
+```bash
+npm run smoke                        # den echten Dienst starten, einen Fake-Editor einwählen,
+                                     # alle 12 Werkzeuge aufrufen, jedes Ergebnis validieren
+npm run smoke -- --out /tmp/ual      # Transkript und PNGs woanders ablegen
+npm run smoke -- --method actor.get  # eine einzelne Katalogmethode, roh ausgegeben
+npm run mock:ue                      # nur der Fake-Editor, zum manuellen Herumstochern
+```
+
+`tools/mock-ue-editor.mjs` ist ein echter Prozess, kein Stub: Er wählt `ws://127.0.0.1:17860`, schiebt `project.info` und `system.heartbeat`, leitet `log.entry`-Zeilen weiter, schreibt ein echtes PNG für `editor.screenshot` und beantwortet **alle 170 katalogisierten Methoden** — mit realistischen Bodies für die Familien, auf die es ankommt, und einem Body mit den dokumentierten Ergebnisschlüsseln für den Rest. `tools/ual-smoke.mjs` startet denselben `UalService`, den `apply()` startet, ruft jedes Werkzeug über sein echtes `execute` auf, validiert jeden Wert gegen das Ausgabeschema dieses Werkzeugs und gibt aus, was das Modell gesehen hätte. Es ist der manuelle Zwilling von `tests/mock-editor.test.ts`; beide sind in [Architektur §11](../de/03-architecture.md#11-verifikationsstrategie) beschrieben.
 
 ---
 

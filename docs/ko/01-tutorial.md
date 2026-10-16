@@ -42,6 +42,15 @@
 
 **UEBox 데스크톱 앱은 필요 없다.** 같은 제조사의 다른 클라이언트인데, 우연히 17860 포트도 쓰므로 둘을 동시에 띄우면 포트 충돌이 난다. [README § "UEBox는 필요 없습니다"](../readme/README_ko.md#uebox는-필요-없습니다) 참고.
 
+**Unreal Engine도 필요 없다**, 이 플러그인이 동작하는 모습만 보고 싶다면. UEBox는 이 브리지로 *밖으로* 전화를 걸므로, 가짜 에디터는 그냥 응답하는 WebSocket 클라이언트다:
+
+```bash
+npm run smoke     # 실제 서비스 + 가짜 에디터: 12개 도구를 모두 호출하고 모든 결과를 검증한다
+npm run mock:ue   # 가짜 에디터만 띄워 직접 찔러본다
+```
+
+`tools/mock-ue-editor.mjs`는 `ws://127.0.0.1:17860`으로 전화를 걸고, `project.info`와 `system.heartbeat`를 밀어 넣고, `log.entry` 줄을 전달하고, `editor.screenshot`을 위해 실제 PNG를 쓰고, 170개 카탈로그 메서드 전부에 응답한다. 아래의 모든 단계는 이것을 상대로 따라 해볼 수 있다.
+
 ### UE 프로젝트에 UnrealAgentLink 설치하기
 
 1. `UnrealAgentLink` 디렉터리 전체를 프로젝트의 `Plugins/`에 복사한다(글로벌 설치는 엔진 쪽 `Plugins/`).
@@ -62,7 +71,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 `npm run check`는 더 나아가기 전에 완전히 초록이어야 한다. 세 가지를 검증한다: 소스와 테스트가 모두 typecheck되고, 동작 테스트가 모두 통과하고, 170개 명령 카탈로그가 C++ 레지스트리와 항목별로 들어맞는다.
@@ -81,18 +90,18 @@ npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconci
 
 #### 설치 스크립트 사용하기
 
-DSH에는 로컬의 트리 밖 플러그인을 설치하는 명령이 없고, `dsh plugin --profile desktop`은 Electron 앱이 그 프로파일을 독점하므로 완전히 거부된다(`bin.js:38`). 그래서 이 저장소가 그 일을 하는 스크립트를 제공한다:
+DSH에는 로컬의 트리 밖 플러그인을 설치하는 명령이 없으므로, 이 저장소가 그 일을 하는 스크립트를 제공한다:
 
 ```bash
 npm run status:dsh -- --profile web   # what is registered right now (npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
 ```
 
-이 스크립트는 `desktop` 프로파일을 거부하고, 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명한다. 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력한다 — **그 결정은 당신의 것이지 스크립트의 것이 아니다**.
+이 스크립트는 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명한다 — CLI가 합성하지 않는 `desktop` 프로파일을 제외한 모든 곳에서 `--dump-config`로 확인하며, `desktop`에서는 `dsh plugin --profile desktop list`가 그 역할을 대신한다. 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력한다 — **그 결정은 당신의 것이지 스크립트의 것이 아니다**.
 
 #### 수동 설치
 
-실제 메커니즘은 네 단계다. 여기서 `<profile>`은 `web`(또는 desktop이 아닌 어떤 프로파일)이다:
+실제 메커니즘은 네 단계다. 여기서 `<profile>`은 `web`(또는 `desktop`, 아래 참고):
 
 ```bash
 npm run build    # the mirror ships lib/, and a mirror made before the build is a partial plugin
@@ -110,7 +119,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 둘 다 필수이며 실패 양식이 다르다: `dsh.bundle`을 선언하지 않는 패키지를 목록에 올리면 부팅 시 **크게** 실패하고, 설치했지만 목록에 없으면 레이어가 **전혀** 기여되지 않는다. 그리고 `file:`는 워크스페이스가 아니라 복사본을 가리켜야 한다 — pnpm은 설치 시점에 그곳에서 발견한 것을 복사하므로, 반쯤 저장된 소스 파일이 DSH가 로드하는 플러그인이 된다.
 
-`desktop` 프로파일에는 CLI 경로가 없다: Electron 앱이 실행 중 그 `package.json`에 락을 쥐고 있고, 경쟁자는 다른 소유자의 락을 절대 지우지 않는다. GUI의 플러그인 관리자를 쓰거나, 앱을 먼저 닫아라.
+`desktop` 프로파일도 같은 네 단계를 거치되 마지막 단계만 뺀다: `dsh --profile desktop …`은 거부되지만(`bin.js:112`가 Electron 프로파일을 거부한다), `dsh plugin --profile desktop …`은 의도적으로 예외이며(`bin.js:119`) Desktop 내장 CLI 자체가 쓰는 경로다. 그러니 앱을 먼저 종료하라 — 제품 자체의 메시지가 정확히 그것을 요구한다. 실행 중인 앱은 인메모리 플러그인 목록에서 manifest를 다시 쓰기 때문이다 — 그다음 설치를 실행하고, 4단계 대신 `dsh plugin --profile desktop list`로 증명하라.
 
 AI 에이전트가 설치를 한다면, 대신 [INSTALL-ai.md](INSTALL-ai.md)를 넘겨줘라 — 그것은 같은 절차를 에이전트가 읽고 검증할 수 있는 체크리스트로 쓴 것이다.
 
@@ -238,11 +247,14 @@ ual_logs { level: "Warning", contains: "Niagara" }
 
 로그 링은 기본적으로 비어 있다 — UE 쪽 로그 포워딩은 **기본적으로 꺼져** 있으며 에디터 안에서 `ual.ForwardLogs 1`을 실행해야 한다(이 플러그인은 원격으로 켤 수 없다). `ual_logs`는 아무것도 없을 때 그 이유를 말해준다.
 
-포워딩이 꺼져 있을 때는 엔진 자체 메시지 로그를 대신 쓴다:
+포워딩이 꺼져 있을 때는 엔진 자체 메시지 로그를 대신 읽는다. 이것은 평평한 목록이 아니라 **카테고리 트리**다: 엔진이 쥐고 있는 카테고리를 먼저 묻고, 그다음 그중 하나에 들어 있는 줄을 묻는다.
 
 ```
-ual_call { method: "messagelog.list", params: { limit: 50 } }
+ual_logs { pullMessageLog: true }                     # 엔진이 가진 카테고리
+ual_logs { pullMessageLog: true, category: "PIE" }    # 그중 하나에 들어 있는 줄
 ```
+
+첫 번째 형태는 `messagelog.list`를 호출하는데, 이것은 **파라미터를 받지 않고** `{categories: [{name, label}]}`로 응답한다 — 그러니 어떤 카테고리가 존재한다는 것은 말해줄 수 있어도 그 내용이 무엇이었는지는 결코 말해주지 못한다. 줄은 `messagelog.get`에서 오는데, 이것은 `category` 하나가 필요하며, 두 번째 형태가 호출하는 것이 바로 그것이다. 원문 페이로드를 원한다면 둘 다 `ual_call`을 통해 도달할 수 있다.
 
 ---
 

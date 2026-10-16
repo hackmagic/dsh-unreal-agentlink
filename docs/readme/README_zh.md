@@ -72,7 +72,7 @@ UEBox 桌面版**不是依赖**。它只是同一厂商的另一个客户端，�
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck（src + tests）+ 173 个测试 + catalog 对账，一条命令
+npm run check      # typecheck（src + tests）+ 189 个测试 + catalog 对账，一条命令
 ```
 
 `npm run check` 必须全绿再往下走 —— 它校验源码与测试的类型检查、行为测试，以及 170 条命令目录与 C++ 注册表逐条对账。
@@ -87,14 +87,14 @@ npm run check      # typecheck（src + tests）+ 173 个测试 + catalog 对账�
 
 > **配置分层**：后一层会**整体替换**该行的 `config`，而不是深合并。要覆盖任何键，必须把想保留的键全部重写一遍。
 
-DSH 没有提供安装本地仓库外插件的命令，而 `dsh plugin --profile desktop` 被直接拒绝 —— Electron 应用独占管理该 profile（`bin.js:38`）。所以本仓库自带一个安装脚本，把事情做完后把最后一步交还给真正的安装器：
+DSH 没有提供安装本地、仓库外插件的命令，所以本仓库自带一个安装脚本，把事情做完后把最后一步交还给真正的安装器：
 
 ```bash
 npm run status:dsh -- --profile web     # 现在注册了什么（同一个脚本，走 npm 透传）
 node scripts/install-dsh-plugin.mjs --profile web             # 镜像、改 manifest、安装、验证
 ```
 
-它拒绝 `desktop` profile，拒绝去动正在运行的 DSH 还持锁的 manifest，并且在回报成功之前先证明层已组装完成（`dsh --profile web --dump-config` 必须包含 `# == dsh-unreal-agentlink`）。如果 peer-dependency 版本闸门拦下安装，它会打印接受风险的确切命令 —— **那个决定是你的，不是脚本的**。
+它拒绝去动正在运行的 DSH 还持锁的 manifest，并且在回报成功之前先证明层已组装完成：`dsh --profile <profile> --dump-config` 必须包含 `# == dsh-unreal-agentlink`；只有 `desktop` 例外 —— CLI 不会合成该 profile，那里改用 `dsh plugin --profile desktop list` 证明，它读的是同一份包依赖图。如果 peer-dependency 版本闸门拦下安装，它会打印接受风险的确切命令 —— **那个决定是你的，不是脚本的**。
 
 另有两条路，都写全了：下面的[手动安装](#手动安装不用脚本)，以及 [INSTALL-ai.md](../zh/INSTALL-ai.md) —— 一份 AI agent 可以阅读并逐步执行的版本。
 
@@ -123,7 +123,7 @@ ual_call { method: "level.get_current" }
 
 ### 手动安装（不用脚本）
 
-上面的脚本只是方便；底层机制是四行 manifest 加一条产品命令。这里 `<profile>` 是 `web`（或任何非 desktop profile），`$DSH_HOME` 默认是 `~/.dsh`：
+上面的脚本只是方便；底层机制是四行 manifest 加一条产品命令。这里 `<profile>` 是 `web` —— `desktop` 也可以，只需做本节末尾提到的那一处替换 —— `$DSH_HOME` 默认是 `~/.dsh`：
 
 ```bash
 # 1. 构建一次，然后只复制 npm pack 会发布的内容
@@ -152,7 +152,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 **为什么 `file:` 指向副本而不是工作区**：pnpm 在安装时复制它当时看到的内容，所以一个保存了一半的源文件 —— 或一次失败构建后被删掉的 `lib/` —— 就成了 DSH 实际加载的插件。先镜像，后安装。
 
-**`desktop` profile 没有 CLI 路径。** `bin.js:38` 拒绝它，因为 Electron 应用独占管理它，而该应用运行时会对 `desktop/package.json` 持一个 `wx` 锁（`dsh-atomic-write`，竞争者绝不会删掉别人的锁）。可选的是 GUI 自带的插件管理器，或者关掉应用后手工走上面四步。先装进 `web` 再把结果拷过去，是侵入最小的做法。
+**`desktop` profile 是受支持的安装目标，只有一处 CLI 缺口。** `dsh --profile desktop …` 会被直接拒绝（`bin.js:112`，`rejectElectronProfile`），因为 Electron 应用掌管该 profile 的生命周期 —— 但对 `dsh plugin` 这道守卫是有意跳过的（`bin.js:119`），应用自己调用的 Desktop 随附 CLI 正依赖这一点（`dsh-desktop-host/lib/cli.js:91-104` 传入 `manageDesktopProfile: true`）。所以按上面的步骤装进 `desktop`，只需改两处：第 4 步换成 `dsh plugin --profile desktop list`，并且必须先把应用完全退出。产品自己的提示写得很清楚 —— *「先打开一次 DeepSeek Harness Desktop 初始化其 profile，然后在运行 `dsh plugin --profile desktop` 之前把它完全退出」* —— 因为运行中的应用会用内存里的插件清单重写 manifest，在它底下做的修改可能丢失。装完后再启动 Desktop 即可挂载该层。
 
 ---
 
@@ -254,7 +254,7 @@ src/
   tools/                    12 个工具
 scripts/                    catalog 提取与对账、文档生成与规范化、语言集、DSH profile 安装脚本
 docs/                       教程 / 协议 / 架构 / 命令参考 / 安装指南，共 9 种语言
-tests/                      173 个测试
+tests/                      189 个测试
 ```
 
 ### 生成物：不要手改
@@ -271,8 +271,8 @@ npm run build && node scripts/gen-docs.mjs                             # 重建�
 ### 测试与校验
 
 ```bash
-npm run check                       # typecheck（src + tests）+ 173 passed + catalog + 文档对账
-npm test                            # 173 passed
+npm run check                       # typecheck（src + tests）+ 189 passed + catalog + 文档对账
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 零漂移；每个 requires 键都在 C++ 里出现；码集与 C++ 一致
 node scripts/gen-docs.mjs --check   # 9 种语言的命令参考是否为最新
 node scripts/normalize-doc-headers.mjs --check   # 54 份文档的语言栏是否都是规范形
@@ -281,11 +281,25 @@ npm run docs                        # 重新生成 + 重写 54 份文档的语�
 npm run install:dsh -- --profile web    # 把本插件注册进一个 dsh profile（见「安装」）
 ```
 
-9 个测试文件按**它们能发现的缺陷类型**划分，各有理由 —— 见[架构第 11 节](../zh/03-architecture.md#11-验证策略)。
+10 个测试文件按**它们能发现的缺陷类型**划分，各有理由 —— 见[架构第 11 节](../zh/03-architecture.md#11-验证策略)。
 
 `requires` 不是手写的：从 handler 自身的 `SendError(..., 400, "Missing field: X")` 消息推导（28 处），因为写错一个键会让桥在引擎看到之前就拒掉一个合法调用。推导结果落在 `method-data.ts` 的 `REQUIRED_KEYS`，由 `methods.ts` 的 `requiresOf()` 合并进运行时（`service.call()` 的前置拒绝、`ual_schema` 的 `REQUIRED:` 行、错误提示都走这一个函数）。
 
 刻意**只收窄不放大**：消息里带 `or`（`"Missing field: name or path"`）整条跳过；从同文件被调函数里挖出来的键按分支局部处理丢弃 —— 见 `scripts/extract-methods.mjs` 的 `REQUIRED_DROPPED`，每个条目都写了 C++ 行号。所以「一个键都没收」是安全的默认，不是漏检。
+
+### 没有 Unreal Engine 也能测试
+
+跑本插件不需要编辑器，也不需要 UEBox —— 接缝就是协议本身：UEBox 是**往外**拨号连到本桥的，所以一个假编辑器就是一个会应答的 WebSocket 客户端。
+
+```bash
+npm run smoke                        # 启动真实服务、接入一个假编辑器，
+                                     # 调用全部 12 个工具、校验每个结果
+npm run smoke -- --out /tmp/ual      # 把运行记录与 PNG 存到别处
+npm run smoke -- --method actor.get  # 只跑一个目录方法，原样打印
+npm run mock:ue                      # 只要那个假编辑器，方便手动试探
+```
+
+`tools/mock-ue-editor.mjs` 是一个真实进程，不是桩：它拨号连 `ws://127.0.0.1:17860`，推送 `project.info` 与 `system.heartbeat`，转发 `log.entry` 行，为 `editor.screenshot` 写出真正的 PNG，并应答**全部 170 个已编目方法** —— 对重要的几个方法族给出有真实感的响应体，其余给出带文档所述结果键的响应体。`tools/ual-smoke.mjs` 启动的是 `apply()` 启动的同一个 `UalService`，通过各工具真正的 `execute` 调用每个工具，用该工具自己的输出 schema 校验每个值，并打印模型本会看到的内容。它是 `tests/mock-editor.test.ts` 的手动孪生；两者都在[架构第 11 节](../zh/03-architecture.md#11-验证策略)里描述。
 
 ---
 

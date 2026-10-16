@@ -115,9 +115,13 @@ Konkurrent löscht niemals die Sperre eines anderen Halters**. Der Halter ist di
 
 - Für das Profil `web`: schließen Sie die laufende DeepSeek-Harness-Desktop-App oder wählen
   Sie ein Profil, das nicht gehalten wird.
-- Für das Profil `desktop`: die CLI ist **verboten** (`bin.js:38`
-  `rejectElectronProfile`); nur die Electron-App darf es verwalten, oder schließen Sie die App
-  und bearbeiten Sie es von Hand.
+- Für das Profil `desktop`: der *Boot*-Befehl der CLI ist **verboten**
+  (`bin.js:112` `rejectElectronProfile`), aber `dsh plugin --profile desktop …` ist
+  bewusst ausgenommen (`bin.js:119`) — es ist der Weg, den die von Desktop
+  mitgelieferte CLI, die die App selbst aufruft, nutzt. Das Produkt verlangt, dass
+  die App zuerst vollständig beendet wird, weil eine laufende App das Manifest aus
+  ihrer eigenen Plugin-Liste neu schreibt. Beenden Sie sie, führen Sie die
+  Installation aus und starten Sie Desktop danach, um die Schicht einzubinden.
 - Das Skript verweigert und nennt den Halter; es bekämpft die Sperre nicht.
 
 ---

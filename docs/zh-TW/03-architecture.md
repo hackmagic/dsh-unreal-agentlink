@@ -39,7 +39,7 @@ scripts/
   gen-docs.mjs          renders docs/<lang>/command-reference.md for all 9 languages
   languages.mjs         the language set — shared by the generator and the docs tests
 docs/                   tutorial / protocol / architecture / command reference / install guide, ×9 languages
-tests/                  173 tests in 9 files
+tests/                  189 tests in 10 files
 ```
 
 ### 依賴方向
@@ -248,7 +248,7 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 173 tests
+vitest run                         # 189 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
 node scripts/gen-docs.mjs --check  # command reference current in 9 languages
 node scripts/normalize-doc-headers.mjs --check   # language bars canonical in 54 files
@@ -256,7 +256,7 @@ node scripts/normalize-doc-links.mjs --check     # body links resolve from where
 npm run install:dsh -- --profile web    # register this plugin with a dsh profile
 ```
 
-測試分布在 9 個檔案裡，按**它們能發現哪一類缺陷**劃分：
+測試分布在 10 個檔案裡，按**它們能發現哪一類缺陷**劃分：
 
 | 檔案 | 覆蓋範圍 |
 |---|---|
@@ -269,10 +269,15 @@ npm run install:dsh -- --profile web    # register this plugin with a dsh profil
 | `i18n.test.ts` | 9 種語言下文件都完整且內部自洽 |
 | `end-to-end.test.ts` | 真實閘門鏈 + 真實 socket + 真實工具 schema |
 | `installer.test.ts` | DSH profile 安裝程式：引數處理、兩筆 manifest 條目、鏡像邊界、拒絕持鎖 |
+| `mock-editor.test.ts` | 面對一個真實假編輯器**行程**的整個表面：170 次 socket 往返與全部 12 個工具 |
 
 **為什麼 `end-to-end.test.ts` 必須存在**：其他每個測試都會把某一層打成樁。`REQUIRED_KEYS` 這個 bug —— 有產生、有文件、經過審視、卻從未被 import —— 沒有任何單元測試抓到它，因為每一層孤立地看都是自洽的。只有把真實閘門鏈接到真實 socket 上、再餵給真實 schema，才能暴露**層與層之間的接縫**。
 
 同理，`tool-output.test.ts` 用的是**真的** `snapshotJsonValue` + `validateJsonSchemaValue`，而不是自己寫一套 schema 檢查 —— 否則 `ual_status` 的 `undefined` 缺陷會以同樣的方式溜過去。
+
+`mock-editor.test.ts` 補上最後一道接縫，它之所以存在，是因為開發本外掛所用的機器**完全沒有安裝 Unreal Engine**。其他測試都用行程內的 `FakeEditor` 物件應答 —— 對釘住閘門鏈來說這正是正確的形態，`end-to-end.test.ts` 就是這麼做的 —— 但同一行程裡的物件無法證明幀能撐過一次真實 socket、真實的 `project.info` 推送能讓 `ual_status` 認出一個編輯器、或者全部 170 個已編目方法真的都能端到端應答。所以 `tools/mock-ue-editor.mjs` 以**子行程**身分執行：它照 UEBox 的方式撥號接入，測試透過真實的 `UalService` 驅動它。`tools/ual-smoke.mjs` 是同一套裝置，只是鍵盤前坐著人 —— 它呼叫全部 12 個工具，用每個工具自己的輸出 schema 驗證每個結果，印出模型原本會看到的內容，並把 PNG 留下來。
+
+它第一次執行就抓到一個真實缺陷。`ual_logs { pullMessageLog: true }` 呼叫 `messagelog.list` 時帶了一個該 handler 從不讀取的 `limit` —— `UAL_MessageLogCommands.cpp:76` **不接收任何參數** —— 然後把拿回來的*類別樹*當成一行「日誌行」包了起來，於是無論編輯器要說什麼，模型看到的都是一行空白。行藏在 `messagelog.get` 後面，它需要一個類別名稱。現在 pull 分支在被要求拿類別樹時讀類別樹，在被給了 `category` 時讀該類別的行，而 `source` 會說明呼叫方看到的是三種答案裡的哪一種。
 
 `i18n.test.ts` 出於同樣的理由，針對的是另一道接縫。`src/` 底下的一切對 `docs/` 一無所知，所以現有測試無法發現某份翻譯檔在切換列裡漏了一種語言、或指向了一個已被改名的標題。它改成把文件當資料讀：每種語言都有那五個檔案，每一列都列出全部九種語言且只把自己的那份加粗，每一個相對連結都能解析到真實檔案，每一個 `#anchor` 都能解析到真實標題。最後一項才是真正有意思的 —— 錨點是從*譯文*標題文字推導出來的，所以翻譯者一旦改寫「Verification strategy」，指向該節的每一個連結都會靜默失效，而且沒有任何地方會報錯。`gen-docs.mjs --check` 以同樣的方式守著產生出來的命令參考；`i18n.test.ts` 是呼叫它，而不是重新實作一次渲染。
 

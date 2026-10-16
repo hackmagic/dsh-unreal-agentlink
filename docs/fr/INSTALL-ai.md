@@ -117,9 +117,13 @@ l'application dsh en cours d'exécution elle-même.
 
 - Pour le profil `web` : fermez l'application de bureau DeepSeek Harness en cours
   d'exécution, ou choisissez un profil qui n'est pas détenu.
-- Pour le profil `desktop` : la CLI est **interdite** (`bin.js:38`
-  `rejectElectronProfile`) ; seule l'application Electron peut le gérer, ou fermez
-  l'application et modifiez à la main.
+- Pour le profil `desktop` : la commande de *démarrage* de la CLI est **interdite**
+  (`bin.js:112` `rejectElectronProfile`), mais `dsh plugin --profile desktop …` en
+  est délibérément exempté (`bin.js:119`) — c'est le chemin qu'utilise la CLI
+  embarquée dans Desktop que l'application elle-même appelle. Le produit demande
+  que l'application soit d'abord entièrement fermée, parce qu'une application en
+  cours d'exécution réécrit le manifeste à partir de sa propre liste de plugins.
+  Fermez-la, lancez l'installation, puis relancez Desktop pour monter la couche.
 - Le script refuse et nomme le détenteur ; il ne lutte pas contre le verrou.
 
 ---

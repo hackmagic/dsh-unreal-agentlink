@@ -48,7 +48,7 @@ DSH agent  ──도구 호출──►  dsh-unreal-agentlink  ◄──WebSocke
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 더 나아가기 전에 `npm run check`가 완전히 초록이어야 합니다 — 소스와 테스트가 typecheck되는지, 동작 테스트가 통과하는지, 170개 명령 카탈로그가 C++ 레지스트리와 항목별로 들어맞는지를 검증합니다.
@@ -63,14 +63,14 @@ npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconci
 
 > **구성 레이어링**: 뒤쪽 레이어가 해당 행의 `config`를 **전체 교체**하며 깊은 병합(deep-merge)을 하지 않습니다. 무엇이든 덮어쓰려면 유지하고 싶은 키를 전부 다시 써야 합니다.
 
-DSH에는 로컬의 트리 밖 플러그인을 설치하는 명령이 없고, `dsh plugin --profile desktop`은 Electron 앱이 그 프로파일을 독점하므로 완전히 거부됩니다(`bin.js:38`). 그래서 이 저장소는 그 일을 하고 나서 실제 설치기에 넘기는 설치기를 제공합니다:
+DSH에는 로컬의 트리 밖 플러그인을 설치하는 명령이 없으므로, 이 저장소는 그 일을 하고 나서 실제 설치기에 넘기는 설치기를 제공합니다:
 
 ```bash
 npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-이 스크립트는 `desktop` 프로파일을 거부하고, 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명합니다(`dsh --profile web --dump-config`에 `# == dsh-unreal-agentlink`가 들어 있어야 함). 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력합니다 — **그 결정은 당신의 것이지 스크립트의 것이 아닙니다**.
+이 스크립트는 실행 중인 DSH가 아직 쥐고 있는 manifest는 건드리지 않으며, 성공을 보고하기 전에 레이어가 합성되었음을 증명합니다: `dsh --profile <profile> --dump-config`에 `# == dsh-unreal-agentlink`가 들어 있어야 하지만, CLI가 합성하지 않는 `desktop`에서는 예외입니다 — 그곳에서는 같은 패키지 그래프를 읽는 `dsh plugin --profile desktop list`로 레이어를 증명합니다. 피어 의존성 가드가 설치를 막으면 위험을 수락할 정확한 명령을 출력합니다 — **그 결정은 당신의 것이지 스크립트의 것이 아닙니다**.
 
 남은 두 경로도 모두 적혀 있습니다: 아래의 [스크립트 없이 수동 설치](#스크립트-없이-수동-설치), 그리고 [INSTALL-ai.md](../ko/INSTALL-ai.md) — AI 에이전트가 읽고 단계별로 따를 수 있는 버전.
 
@@ -99,7 +99,7 @@ ual_call { method: "level.get_current" }
 
 ### 스크립트 없이 수동 설치
 
-위 스크립트는 편의를 위한 것이며, 실제 메커니즘은 네 줄의 manifest와 제품 명령 하나입니다. 여기서 `<profile>`은 `web`(또는 desktop이 아닌 어떤 프로파일)이고, `$DSH_HOME`은 기본적으로 `~/.dsh`입니다:
+위 스크립트는 편의를 위한 것이며, 실제 메커니즘은 네 줄의 manifest와 제품 명령 하나입니다. 여기서 `<profile>`은 `web`이고 — `desktop`도 됩니다. 이 섹션 끝에 적힌 한 가지 대체만 적용하면 됩니다 — `$DSH_HOME`은 기본적으로 `~/.dsh`입니다:
 
 ```bash
 # 1. build once, then copy only what npm pack ships
@@ -128,7 +128,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 **`file:`가 워크스페이스가 아니라 복사본을 가리키는 이유**: pnpm은 설치 시점에 그곳에서 발견한 것을 복사하므로, 반쯤 저장된 소스 파일 — 또는 빌드 실패 후 지워진 `lib/` — 가 DSH가 로드하는 플러그인이 됩니다. 먼저 미러하고, 그다음 설치하세요.
 
-**`desktop` 프로파일에는 CLI 경로가 없습니다.** Electron 애플리케이션이 그것을 독점하므로 `bin.js:38`가 거부하고, 그 앱은 실행 중 `desktop/package.json`에 `wx` 락을 쥐고 있습니다(`dsh-atomic-write`, 그리고 경쟁자는 다른 소유자의 락을 절대 지우지 않습니다). 선택지는 GUI의 플러그인 관리자를 쓰거나, 앱을 닫고 위 네 단계를 손으로 하는 것입니다. `web`에 먼저 설치하고 결과를 복사하는 것이 가장 덜 침습적입니다.
+**`desktop` 프로파일은 지원되는 대상이며, CLI에 한 가지 빈틈이 있습니다.** `dsh --profile desktop …`은 곧바로 거부됩니다(`bin.js:112`, `rejectElectronProfile`). Electron 앱이 그 프로파일의 수명을 소유하기 때문입니다 — 하지만 그 가드는 `dsh plugin`에 대해 의도적으로 건너뛰며(`bin.js:119`), 앱 자체가 호출하는 Desktop 내장 CLI가 바로 그것에 의존합니다(`dsh-desktop-host/lib/cli.js:91-104`가 `manageDesktopProfile: true`를 전달합니다). 따라서 위에 나온 대로 `desktop`에 설치하되 두 가지만 바꾸세요: 4단계는 `dsh plugin --profile desktop list`가 되고, 앱을 먼저 완전히 종료해야 합니다. 제품 자체의 메시지가 그것을 명시합니다 — *"Open DeepSeek Harness Desktop once to initialize its profile, then fully quit it before running dsh plugin --profile desktop"* — 실행 중인 앱은 인메모리 플러그인 목록에서 manifest를 다시 쓰므로, 그 밑에서 이루어진 편집은 유실될 수 있기 때문입니다. 이후 Desktop을 실행하면 레이어가 마운트됩니다.
 
 ---
 
@@ -256,7 +256,7 @@ scripts/                    Catalog extraction and reconciliation, doc generatio
                               the language set, and the DSH profile installer
 docs/                       Tutorial / protocol / architecture / command reference / install guide,
                               in 9 languages
-tests/                      173 tests
+tests/                      189 tests
 ```
 
 ### 생성된 파일: 직접 수정 금지
@@ -273,17 +273,31 @@ npm run build && node scripts/gen-docs.mjs                             # rebuild
 ### 테스트와 점검
 
 ```bash
-npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
-npm test                            # 173 passed
+npm run check                       # typecheck (src + tests) + 189 passed + catalog + doc reconciliation
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date
 ```
 
-테스트 파일 7개는 **그들이 찾아낼 수 있는 결함의 종류**로 나뉘며, 각각 이유가 있습니다 — [아키텍처 11장](../ko/03-architecture.md#11-검증-전략)을 보세요.
+테스트 파일 10개는 **그들이 찾아낼 수 있는 결함의 종류**로 나뉘며, 각각 이유가 있습니다 — [아키텍처 11장](../ko/03-architecture.md#11-검증-전략)을 보세요.
 
 `requires`는 손으로 쓰지 않습니다. 핸들러 자신의 `SendError(..., 400, "Missing field: X")` 메시지(28곳)에서 도출합니다. 필수 키를 잘못 정하면 브리지가 엔진이 보기도 전에 *유효한* 호출을 거부하게 되기 때문입니다. 결과는 `method-data.ts`의 `REQUIRED_KEYS`로 들어가고, `methods.ts`의 `requiresOf()`가 런타임 사용에 병합합니다(`service.call()`의 사전 거부, `ual_schema`의 `REQUIRED:` 행, 오류 힌트가 모두 이 함수 하나를 지납니다).
 
 의도적으로 **좁히기만 하고 넓히지 않습니다**. `or`가 들어간 메시지(`"Missing field: name or path"`)는 아예 건너뛰고, 같은 파일의 피호출 함수에서 건져낸 키는 분기 국소적인 것으로 버립니다 — `scripts/extract-methods.mjs`의 `REQUIRED_DROPPED`를 보세요. 모든 항목에 C++ 줄 번호가 적혀 있습니다. 그래서 「건져낸 키가 없다」는 것은 놓친 검사가 아니라 안전한 기본값입니다.
+
+### Unreal Engine 없이 테스트하기
+
+이 플러그인을 실행하는 데 에디터도, UEBox도 필요 없습니다 — 그리고 그 이음새는 프로토콜 자체입니다: UEBox는 이 브리지로 **밖으로** 전화를 걸므로, 가짜 에디터는 그냥 응답하는 WebSocket 클라이언트입니다.
+
+```bash
+npm run smoke                        # 실제 서비스를 시작하고 가짜 에디터를 접속시켜,
+                                     # 12개 도구를 모두 호출하고 모든 결과를 검증합니다
+npm run smoke -- --out /tmp/ual      # 트랜스크립트와 PNG를 다른 곳에 보관합니다
+npm run smoke -- --method actor.get  # 카탈로그 메서드 하나를 원문 그대로 출력합니다
+npm run mock:ue                      # 가짜 에디터만 띄워 직접 찔러봅니다
+```
+
+`tools/mock-ue-editor.mjs`는 스텁이 아니라 실제 프로세스입니다: `ws://127.0.0.1:17860`으로 전화를 걸고, `project.info`와 `system.heartbeat`를 밀어 넣고, `log.entry` 줄을 전달하고, `editor.screenshot`을 위해 진짜 PNG를 쓰고, **170개 카탈로그 메서드 전부**에 응답합니다 — 중요한 계열에는 현실적인 본문을, 나머지에는 문서화된 결과 키를 담은 본문을 돌려줍니다. `tools/ual-smoke.mjs`는 `apply()`가 시작하는 것과 같은 `UalService`를 시작하고, 모든 도구를 실제 `execute`를 통해 호출하고, 각 값을 그 도구 자체의 output schema에 대해 검증하고, 모델이 보았을 것을 출력합니다. 이것은 `tests/mock-editor.test.ts`의 수동 쌍둥이이며, 둘 다 [architecture §11](../ko/03-architecture.md#11-검증-전략)에 설명되어 있습니다.
 
 ---
 

@@ -48,7 +48,7 @@ From then on the editor dials out on its own: `StartupModule` unconditionally ca
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 `npm run check` must be fully green before going further — it verifies that sources and tests typecheck, the behaviour tests pass, and the 170-command catalog lines up with the C++ registry entry by entry.
@@ -63,14 +63,14 @@ Then register it as a DSH bundle. `package.json` declares `dsh.bundle.patch: ./c
 
 > **Configuration layering**: a later layer **replaces** that row's `config` wholesale rather than deep-merging it. To override anything, rewrite every key you want to keep.
 
-DSH ships no command that installs a local, out-of-tree plugin, and `dsh plugin --profile desktop` is refused outright because the Electron app manages that profile exclusively (`bin.js:38`). So this repository ships an installer that does the job and then defers to the real one:
+DSH ships no command that installs a local, out-of-tree plugin, so this repository ships an installer that does the job and then defers to the real one:
 
 ```bash
 npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-It refuses the `desktop` profile, refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success (`dsh --profile web --dump-config` must contain `# == dsh-unreal-agentlink`). If the peer-dependency guard stops the install it prints the exact command to accept the risk — **that decision is yours, not the script's**.
+It refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success: `dsh --profile <profile> --dump-config` must contain `# == dsh-unreal-agentlink`, except on `desktop`, which the CLI will not compose — there the layer is proven through `dsh plugin --profile desktop list`, which reads the same package graph. If the peer-dependency guard stops the install it prints the exact command to accept the risk — **that decision is yours, not the script's**.
 
 Two more paths, both written out: the [manual install](#manual-install-without-the-script) below, and [INSTALL-ai.md](docs/INSTALL-ai.md) — a version an AI agent can read and follow step by step.
 
@@ -123,7 +123,7 @@ Once the plugin is in your project it runs on its own: `StartupModule` unconditi
 
 ### Manual install without the script
 
-The script above is a convenience; the underlying mechanism is four lines of manifest plus one product command. Where `<profile>` is `web` (or any non-desktop profile) and `$DSH_HOME` is `~/.dsh` by default:
+The script above is a convenience; the underlying mechanism is four lines of manifest plus one product command. Where `<profile>` is `web` — `desktop` works too, with the one substitution noted at the end of this section — and `$DSH_HOME` is `~/.dsh` by default:
 
 ```bash
 # 1. build once, then copy only what npm pack ships
@@ -141,6 +141,8 @@ dsh plugin --profile <profile> install
 dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 ```
 
+Step 4 is the one step `desktop` cannot run: the CLI refuses to boot that profile from the command line, so prove it with `dsh plugin --profile desktop list` instead (see below).
+
 The two entries, in `<profile>/package.json`:
 
 ```json
@@ -152,7 +154,7 @@ Both are mandatory and they fail differently: a listed package that declares no 
 
 **Why `file:` points at a copy, not at your workspace**: pnpm copies what it finds at install time, so a half-saved source file — or a deleted `lib/` after a failed build — becomes the plugin DSH loads. Mirror first, install second.
 
-**The `desktop` profile has no CLI path.** `bin.js:38` rejects it because the Electron application manages it exclusively, and that app holds a `wx` lock on `desktop/package.json` while it runs (`dsh-atomic-write`, and a contender never deletes another holder's lock). Your options are the GUI's own plugin manager, or closing the app and doing the four steps above by hand. Installing into `web` first and copying the result over is the least invasive.
+**The `desktop` profile is a supported target, with one CLI gap.** `dsh --profile desktop …` is refused outright (`bin.js:112`, `rejectElectronProfile`) because the Electron app owns that profile's lifetime — but the guard is deliberately skipped for `dsh plugin` (`bin.js:119`), and the Desktop-carried CLI the app itself calls depends on exactly that (`dsh-desktop-host/lib/cli.js:91-104` passes `manageDesktopProfile: true`). So install into `desktop` as shown above, with two changes: step 4 becomes `dsh plugin --profile desktop list`, and the app must be fully quit first. The product's own message spells that out — *"Open DeepSeek Harness Desktop once to initialize its profile, then fully quit it before running dsh plugin --profile desktop"* — because a running app rewrites the manifest from its in-memory plugin list, so an edit made underneath it can be lost. Launch Desktop afterwards to mount the layer.
 
 ---
 
@@ -258,7 +260,7 @@ scripts/                    Catalog extraction and reconciliation, doc generatio
                              the language set, and the DSH profile installer
 docs/                       Tutorial / protocol / architecture / command reference / install guide,
                              in 9 languages
-tests/                      173 tests
+tests/                      189 tests
 ```
 
 ### Generated files: do not edit by hand
@@ -275,8 +277,8 @@ A hand-maintained table that nobody imports is a recurring defect class in this 
 ### Tests and checks
 
 ```bash
-npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
-npm test                            # 173 passed
+npm run check                       # typecheck (src + tests) + 189 passed + catalog + doc reconciliation
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
 node scripts/normalize-doc-headers.mjs --check   # are the language bars canonical in all 54 files
@@ -285,11 +287,25 @@ npm run docs                        # regenerate + rewrite the 54 doc headers an
 npm run install:dsh -- --profile web    # register this plugin with a dsh profile (see Installation)
 ```
 
-The nine test files are divided by **the kind of defect they can find**, each for a reason — see [architecture §11](docs/03-architecture.md#11-verification-strategy).
+The ten test files are divided by **the kind of defect they can find**, each for a reason — see [architecture §11](docs/03-architecture.md#11-verification-strategy).
 
 `requires` is not hand-written: it is derived from the handlers' own `SendError(..., 400, "Missing field: X")` messages (28 sites), because a wrong required key makes the bridge reject a *valid* call before the engine sees it. The result lands in `method-data.ts` as `REQUIRED_KEYS`, and `methods.ts`'s `requiresOf()` merges it into runtime use (the early rejection in `service.call()`, the `REQUIRED:` line in `ual_schema`, and error hints all go through that one function).
 
 It deliberately **narrows only, never widens**: a message containing `or` (`"Missing field: name or path"`) is skipped entirely, and keys harvested from a called function in the same file are dropped as branch-local — see `REQUIRED_DROPPED` in `scripts/extract-methods.mjs`, where every entry cites its C++ line number. So "no keys harvested" is the safe default, not a missed check.
+
+### Test without Unreal Engine
+
+You do not need an editor, or UEBox, to run this plugin — and the seam is the protocol itself: UEBox dials **out** to this bridge, so a fake editor is just a WebSocket client that answers.
+
+```bash
+npm run smoke                        # start the real service, dial in a fake editor,
+                                     # call all 12 tools, validate every result
+npm run smoke -- --out /tmp/ual      # keep the transcript and the PNGs somewhere else
+npm run smoke -- --method actor.get  # one catalog method, printed raw
+npm run mock:ue                      # just the fake editor, to poke at by hand
+```
+
+`tools/mock-ue-editor.mjs` is a real process, not a stub: it dials `ws://127.0.0.1:17860`, pushes `project.info` and `system.heartbeat`, forwards `log.entry` lines, writes a genuine PNG for `editor.screenshot`, and answers **all 170 cataloged methods** — realistic bodies for the families that matter, and a body carrying the documented result keys for the rest. `tools/ual-smoke.mjs` starts the same `UalService` that `apply()` starts, calls every tool through its real `execute`, validates each value against that tool's own output schema, and prints what the model would have seen. It is the manual twin of `tests/mock-editor.test.ts`; both are described in [architecture §11](docs/03-architecture.md#11-verification-strategy).
 
 ---
 

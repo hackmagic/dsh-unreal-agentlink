@@ -104,8 +104,11 @@ dsh 用 `wx` 创建的 `.lock` 兄弟文件保护 profile manifest，**竞争者
 持有者就是正在运行的 dsh 应用本身。
 
 - 装到 `web` profile：关闭正在跑的 DeepSeek Harness 桌面应用，或换一个没被占用的 profile。
-- 装到 `desktop` profile：**CLI 禁止**（`bin.js:38 rejectElectronProfile`），
-  只能由 Electron 应用自己管理，或者关掉应用后手动改。
+- 装到 `desktop` profile：CLI 的*启动*命令是**禁止的**（`bin.js:112`
+  `rejectElectronProfile`），但 `dsh plugin --profile desktop …` 是有意豁免的
+  （`bin.js:119`）—— 应用自己调用的 Desktop 随附 CLI 走的就是这条路。产品要求先把应用完全退出，
+  因为运行中的应用会用自己的插件清单重写 manifest。退出它，跑安装，
+  装完再启动 Desktop 以挂载该层。
 - 脚本会原样拒绝并告诉你持锁进程，不会去抢锁。
 
 ---

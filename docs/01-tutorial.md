@@ -42,6 +42,15 @@ Before touching anything, these four facts determine how every later operation i
 
 **You do not need the UEBox desktop app.** It is another client from the same vendor that happens to use port 17860 too, so running both at once is a port conflict. See [README § "You do not need UEBox"](../README.md#you-do-not-need-uebox).
 
+**You do not need Unreal Engine either**, if all you want is to see this plugin work. UEBox dials *out* to this bridge, so a fake editor is just a WebSocket client that answers:
+
+```bash
+npm run smoke     # real service + fake editor: calls all 12 tools, validates every result
+npm run mock:ue   # just the fake editor, to poke at by hand
+```
+
+`tools/mock-ue-editor.mjs` dials `ws://127.0.0.1:17860`, pushes `project.info` and `system.heartbeat`, forwards `log.entry` lines, writes a real PNG for `editor.screenshot`, and answers all 170 cataloged methods. Every step below can be followed against it.
+
 ### Installing UnrealAgentLink into a UE project
 
 1. Copy the whole `UnrealAgentLink` directory into the project's `Plugins/` (or the engine's `Plugins/` for a global install).
@@ -62,7 +71,7 @@ The plugin automatically enables its two engine-shipped dependencies, `IKRig` an
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck + 173 tests + catalog reconciliation, one command
+npm run check      # typecheck + 189 tests + catalog reconciliation, one command
 ```
 
 `npm run check` must be fully green before going further. It verifies three things: sources and tests both typecheck, the behaviour tests all pass, and the 170-command catalog lines up with the C++ registry entry by entry.
@@ -81,18 +90,18 @@ npm run check      # typecheck + 173 tests + catalog reconciliation, one command
 
 #### With the installer script
 
-DSH ships no command that installs a local out-of-tree plugin, and `dsh plugin --profile desktop` is refused outright because the Electron app manages that profile exclusively (`bin.js:38`). So this repo ships one:
+DSH ships no command that installs a local out-of-tree plugin, so this repo ships one:
 
 ```bash
 npm run status:dsh -- --profile web   # what is registered right now (npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web            # mirror, edit the manifest, install, verify
 ```
 
-It refuses the `desktop` profile, refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success. If the peer-dependency guard stops the install it prints the exact command to accept the risk — **that decision is yours, not the script's**.
+It refuses to touch a manifest a running DSH still holds, and proves the layer is composed before reporting success — through `--dump-config` everywhere except the `desktop` profile, which the CLI will not compose, so `dsh plugin --profile desktop list` stands in for it. If the peer-dependency guard stops the install it prints the exact command to accept the risk — **that decision is yours, not the script's**.
 
 #### By hand
 
-The underlying mechanism is four steps. Where `<profile>` is `web` (or any non-desktop profile):
+The underlying mechanism is four steps, where `<profile>` is `web` (or `desktop`, see the note below):
 
 ```bash
 npm run build    # the mirror ships lib/, and a mirror made before the build is a partial plugin
@@ -110,7 +119,7 @@ plus two entries in `<profile>/package.json`:
 
 Both are mandatory and they fail differently: a listed package that declares no `dsh.bundle` fails **loud** at boot, while an installed package that is not listed contributes **no layer at all**. And `file:` must point at a copy, not at your workspace — pnpm copies what it finds at install time, so a half-saved source file becomes the plugin DSH loads.
 
-The `desktop` profile has no CLI path: the Electron app holds a lock on its `package.json` while it runs, and a contender never deletes another holder's lock. Use the GUI's plugin manager, or close the app first.
+The `desktop` profile takes the same four steps, minus the last one: `dsh --profile desktop …` is refused (`bin.js:112` rejects the Electron profile), while `dsh plugin --profile desktop …` is deliberately exempt (`bin.js:119`) and is the path the Desktop-carried CLI itself uses. So quit the app first — the product's own message asks for exactly that, because a running app rewrites the manifest from its in-memory plugin list — then run the install and prove it with `dsh plugin --profile desktop list` in place of step 4.
 
 If an AI agent is doing the installation, hand it [INSTALL-ai.md](INSTALL-ai.md) instead — it is the same procedure written as a checklist it can read and verify.
 
@@ -238,11 +247,14 @@ ual_logs { level: "Warning", contains: "Niagara" }
 
 The log ring is empty by default — UE-side log forwarding is **off by default** and requires running `ual.ForwardLogs 1` inside the editor (this plugin cannot turn it on remotely). `ual_logs` says so when it returns nothing.
 
-With forwarding off, use the engine's own message log instead:
+With forwarding off, read the engine's own message log instead. It is a **category tree**, not a flat list: ask which categories it is holding, then ask for the lines inside one.
 
 ```
-ual_call { method: "messagelog.list", params: { limit: 50 } }
+ual_logs { pullMessageLog: true }                     # the categories the engine has
+ual_logs { pullMessageLog: true, category: "PIE" }    # the lines inside one
 ```
+
+The first form calls `messagelog.list`, which takes **no parameters** and answers with `{categories: [{name, label}]}` — so it can tell you a category exists, never what it said. The lines come from `messagelog.get`, which needs one `category`; that is what the second form calls. Both are reachable through `ual_call` if you want the raw payload.
 
 ---
 

@@ -42,7 +42,7 @@ scripts/
   normalize-doc-links.mjs    본문 링크를 그 파일이 놓인 위치에서 resolve되도록 다시 쓴다
   install-dsh-plugin.mjs     이 플러그인을 dsh 프로필에 등록한다(미러, 매니페스트, 설치, 검증)
 docs/                   튜토리얼 / 프로토콜 / 아키텍처 / 명령 참조 / 설치 가이드, ×9 언어
-tests/                  9개 파일에 173개 테스트
+tests/                  10개 파일에 189개 테스트
 ```
 
 ### 의존성 방향
@@ -251,7 +251,7 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 173 tests
+vitest run                         # 189 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
 node scripts/gen-docs.mjs --check  # 9개 언어의 명령 참조가 최신인지
 node scripts/normalize-doc-headers.mjs --check   # 54개 파일의 언어 막대가 규격인지
@@ -259,7 +259,7 @@ node scripts/normalize-doc-links.mjs --check     # 본문 링크가 제 자리�
 npm run install:dsh -- --profile web    # 이 플러그인을 dsh 프로필에 등록
 ```
 
-테스트는 9개 파일에 있고, **그들이 찾아낼 수 있는 결함의 종류**로 나뉜다:
+테스트는 10개 파일에 있고, **그들이 찾아낼 수 있는 결함의 종류**로 나뉜다:
 
 | 파일 | 커버리지 |
 |---|---|
@@ -272,10 +272,15 @@ npm run install:dsh -- --profile web    # 이 플러그인을 dsh 프로필에 �
 | `i18n.test.ts` | 9개 언어 전체에서 문서가 완전하고 내부적으로 일관됨 |
 | `end-to-end.test.ts` | 실제 gate chain + 실제 소켓 + 실제 tool schema |
 | `installer.test.ts` | DSH 프로필 설치기: 인자 처리, 매니페스트의 두 항목, 미러 경계, 잠금 거부 |
+| `mock-editor.test.ts` | 실제 가짜 에디터 **프로세스**를 상대로 한 전체 표면: 170회 소켓 왕복과 12개 도구 전부 |
 
 **왜 `end-to-end.test.ts`가 존재해야 하는가**: 다른 모든 테스트는 한 레이어를 스텁한다. `REQUIRED_KEYS` 버그 — 생성되고 문서화되고 리뷰됐는데 임포트되지 않음 — 는 어떤 단위 테스트에도 잡히지 않았는데, 각 레이어가 고립된 상태에서 자기 정합적이었기 때문이다. 실제 gate chain을 실제 소켓에 연결해서 실제 schema에 먹여줘야만 **레이어 사이의 이음새**가 드러난다.
 
 같은 이유로 `tool-output.test.ts`는 자체 schema 검사를 쓰지 않고 **실제** `snapshotJsonValue` + `validateJsonSchemaValue`를 쓴다 — 그렇지 않으면 `ual_status`의 `undefined` 결함이 그냥 빠져나갈 것이다.
+
+`mock-editor.test.ts`는 마지막 이음새를 닫으며, 이것이 존재하는 이유는 이 플러그인을 만든 머신에 **Unreal Engine이 전혀 설치되어 있지 않기** 때문이다. 다른 모든 테스트는 같은 프로세스 안의 `FakeEditor` 객체로 응답한다 — gate chain을 고정하기에는 올바른 형태이고 `end-to-end.test.ts`가 하는 일이 바로 그것이다 — 하지만 같은 프로세스 안의 객체는 프레임이 실제 소켓을 건너 살아남는지, 실제 `project.info` 푸시가 `ual_status`로 하여금 에디터를 식별하게 하는지, 또는 170개 카탈로그 메서드 전부가 실제로 end to end로 응답 가능한지를 보여줄 수 없다. 그래서 `tools/mock-ue-editor.mjs`는 **자식 프로세스**로 실행된다: UEBox가 하는 방식으로 접속하고, 테스트는 실제 `UalService`를 통해 그것을 구동한다. `tools/ual-smoke.mjs`는 키보드 앞에 사람이 앉은 같은 장비다 — 12개 도구를 모두 호출하고, 각 결과를 그 도구 자체의 output schema에 대해 검증하고, 모델이 보았을 것을 출력하고, PNG를 보관한다.
+
+이것은 처음 실행됐을 때 실제 결함을 찾아냈다. `ual_logs { pullMessageLog: true }`는 `messagelog.list`를 호출하면서 그 핸들러가 결코 읽지 않는 `limit`을 넘겼고 — `UAL_MessageLogCommands.cpp:76`은 **파라미터를 전혀** 받지 않는다 — 그다음 돌려받은 *카테고리 트리*를 하나의 "로그 줄"로 감쌌다. 그래서 모델은 에디터가 무슨 말을 했든 빈 행 하나만 보게 됐다. 줄은 카테고리 이름이 필요한 `messagelog.get` 뒤에 있다. 이제 pull 분기는 카테고리 트리를 요청받으면 그것을 읽고, `category`를 받으면 그 카테고리의 줄을 읽으며, `source`는 호출자가 세 가지 답변 중 어느 것을 보고 있는지 말해준다.
 
 `i18n.test.ts`는 같은 이유로, 다른 이음새에 대해 존재한다. `src/` 아래의 모든 것은 `docs/`에 대해 아무것도 모르므로, 기존 테스트로는 언어 전환 바에서 언어를 빠뜨렸거나 이름을 바꾼 제목에 링크한 번역을 눈치챌 수 없었다. 그것은 문서를 데이터로 읽는다: 모든 언어가 다섯 파일을 가지고, 모든 바가 아홉 언어를 모두 나열하고 자신의 것만 볼드하며, 모든 상대 링크가 실제 파일로 resolve되고, 모든 `#anchor`가 실제 제목으로 resolve된다. 마지막이 흥미로운 것인데 — 앵커는 *번역된* 제목 텍스트에서 도출되므로, 번역자가 "Verification strategy"를 다르게 쓰는 순간 그 절로 들어오는 모든 링크가 조용히 무효가 되고 어디에도 오류가 나지 않는다. `gen-docs.mjs --check`는 생성된 명령 참조를 같은 방식으로 보호한다; `i18n.test.ts`는 렌더를 재구현하지 않고 그것을 셸 아웃한다.
 

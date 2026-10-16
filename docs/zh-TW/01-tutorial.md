@@ -42,6 +42,15 @@
 
 **不需要 UEBox 桌面版。** 它只是同一廠商的另一個用戶端，恰好也連 17860，所以同時執行會搶連接埠。詳見 [README 的「不需要安裝 UEBox」](../readme/README_zh-TW.md#不需要安裝-uebox)。
 
+**你也不需要 Unreal Engine**，如果你只是想看到本外掛跑起來。UEBox 是*往外*撥號連到本橋接的，所以一個假編輯器就是一個會應答的 WebSocket 用戶端：
+
+```bash
+npm run smoke     # 真實服務 + 假編輯器：呼叫全部 12 個工具，驗證每個結果
+npm run mock:ue   # 只要那個假編輯器，方便手動試探
+```
+
+`tools/mock-ue-editor.mjs` 撥號連 `ws://127.0.0.1:17860`，推送 `project.info` 與 `system.heartbeat`，轉發 `log.entry` 行，為 `editor.screenshot` 寫出真正的 PNG，並應答全部 170 個已編目方法。下面每一步都可以對著它走一遍。
+
 ### 把 UnrealAgentLink 裝進 UE 專案
 
 1. 把 `UnrealAgentLink` 整個目錄複製到專案的 `Plugins/` 下（或引擎的 `Plugins/` 下，全域生效）。
@@ -62,7 +71,7 @@
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 往下走之前，`npm run check` 必須全綠。它驗證三件事：原始碼與測試都能通過型別檢查、行為測試全過、170 條命令的目錄與 C++ 註冊表逐條對齊。
@@ -81,18 +90,18 @@ npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconci
 
 #### 使用安裝指令碼
 
-DSH 自己**沒有**安裝本機 out-of-tree 外掛的指令 —— `dsh plugin --profile desktop` 會被直接拒絕，因為 Electron 應用程式獨佔管理該 profile（`bin.js:38`）。本倉庫因此附帶了一個安裝程式，它做好前置工作之後就把接下來的安裝交給真正的安裝器：
+DSH 自己**沒有**安裝本機 out-of-tree 外掛的指令，因此本倉庫附帶了一個安裝程式，它做好前置工作之後就把接下來的安裝交給真正的安裝器：
 
 ```bash
 npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-它會拒絕 `desktop` profile、拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成（`dsh --profile web --dump-config` 必須包含 `# == dsh-unreal-agentlink`）。它還會核對 peer dependency —— 只有一個確定的 DSH 版本被宣告可以載入本外掛，所以一個明顯不相容的執行環境會被 `allow-version` 放行，而不是被悄悄忽略。如果守衛擋下了安裝，它會印出接受風險的確切指令（`--accept-risk`）；**那個決定是你的，不是腳本的**。
+它拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成 —— 除了 `desktop` profile 之外，處處都走 `--dump-config`（`dsh --profile <profile> --dump-config` 必須包含 `# == dsh-unreal-agentlink`）；`desktop` 是 CLI 不會合成的 profile，所以改由 `dsh plugin --profile desktop list` 代勞。它還會核對 peer dependency —— 只有一個確定的 DSH 版本被宣告可以載入本外掛，所以一個明顯不相容的執行環境會被 `allow-version` 放行，而不是被悄悄忽略。如果守衛擋下了安裝，它會印出接受風險的確切指令（`--accept-risk`）；**那個決定是你的，不是腳本的**。
 
 #### 手動安裝
 
-上面的指令碼只是個方便；底層機制是四步 manifest 編輯加上一條產品指令。其中 `<profile>` 是 `web`（或任何非 desktop 的 profile），`$DSH_HOME` 預設是 `~/.dsh`：
+上面的指令碼只是個方便；底層機制是四步 manifest 編輯加上一條產品指令。其中 `<profile>` 是 `web`（也可以是 `desktop`，見下面的說明），`$DSH_HOME` 預設是 `~/.dsh`：
 
 ```bash
 # 1. 先建置一次，然後只複製 npm pack 會出貨的東西
@@ -121,7 +130,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 **為什麼 `file:` 指向一份複本，而不是你的工作區**：pnpm 在安裝時會複製它找到的東西，所以一個存到一半的原始檔 —— 或建置失敗後被刪掉的 `lib/` —— 會變成 DSH 載入的那個外掛。先鏡像，再安裝。
 
-**`desktop` profile 沒有 CLI 路徑。** `bin.js:38` 會拒絕它，因為 Electron 應用程式獨佔管理它，而那個應用程式在執行期間會對 `desktop/package.json` 持有一個 `wx` 鎖（`dsh-atomic-write`，而競爭者永不刪除另一個持有者的鎖）。你的選項是 GUI 自己的外掛管理器，或者關掉應用程式後手動做上面四步。先裝進 `web` 再把結果複製過去，是最不侵入的做法。
+**`desktop` profile 同樣走這四步，只是沒有最後一步。** `dsh --profile desktop …` 會被拒絕（`bin.js:112` 拒絕 Electron profile），而 `dsh plugin --profile desktop …` 是有意豁免的（`bin.js:119`），Desktop 隨附的 CLI 自己走的就是這條路。所以先把應用程式完全關掉 —— 產品自己的訊息正是這樣要求，因為執行中的應用程式會用記憶體裡的插件清單重寫 manifest —— 然後跑安裝，並用 `dsh plugin --profile desktop list` 代替第 4 步來驗證。
 
 如果你是在讓一個 AI agent 做這件事，把 [INSTALL-ai.md](INSTALL-ai.md) 給它 —— 那是一份機器可讀的逐步程序，連失敗時的讀法都寫在裡面。
 
@@ -249,11 +258,14 @@ ual_logs { level: "Warning", contains: "Niagara" }
 
 日誌環預設是空的 —— UE 側的日誌轉發**預設關閉**，需要在編輯器內執行 `ual.ForwardLogs 1`（本外掛無法遠端開啟）。`ual_logs` 回傳空值時會提示這一點。
 
-轉發關閉時，改用引擎自己的訊息日誌：
+轉發關閉時，改用引擎自己的訊息日誌。它是一棵**類別樹**，不是一張平鋪清單：先問它持有哪些類別，再問其中一個類別裡的行。
 
 ```
-ual_call { method: "messagelog.list", params: { limit: 50 } }
+ual_logs { pullMessageLog: true }                     # 引擎持有的類別
+ual_logs { pullMessageLog: true, category: "PIE" }    # 其中一個類別裡的行
 ```
+
+第一種形式呼叫的是 `messagelog.list`，它**不接收任何參數**，並以 `{categories: [{name, label}]}` 應答 —— 所以它只能告訴你某個類別存在，永遠說不出它講了什麼。行來自 `messagelog.get`，它需要一個 `category`；第二種形式呼叫的就是它。如果想要原始酬載，兩者都可以透過 `ual_call` 取得。
 
 ---
 

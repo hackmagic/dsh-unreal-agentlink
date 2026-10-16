@@ -48,7 +48,7 @@ agent 已經會讀檔案、跑命令了。這個外掛把**編輯器本身**也�
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 再往下走之前 `npm run check` 必須全綠 —— 它驗證原始碼與測試都能通過型別檢查、行為測試全過，以及 170 條命令的目錄與 C++ 註冊表逐條對齊。
@@ -63,14 +63,14 @@ npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconci
 
 > **配置分層**：後一層會**整體替換**該行的 `config`，而不是深合併。要覆寫任何內容，必須把想保留的鍵全部重寫一遍。
 
-DSH 沒有附帶任何安裝本機 out-of-tree 外掛的指令，而 `dsh plugin --profile desktop` 會被直接拒絕，因為 Electron 應用程式獨佔管理該 profile（`bin.js:38`）。因此本倉庫附帶了一個安裝程式，它做完這件事之後就把接下來交給真正的安裝器：
+DSH 沒有附帶任何安裝本機 out-of-tree 外掛的指令，因此本倉庫附帶了一個安裝程式，它做完這件事之後就把接下來交給真正的安裝器：
 
 ```bash
 npm run status:dsh -- --profile web     # what is registered right now (same script, npm passthrough)
 node scripts/install-dsh-plugin.mjs --profile web             # mirror, edit the manifest, install, verify
 ```
 
-它會拒絕 `desktop` profile、拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成（`dsh --profile web --dump-config` 必須包含 `# == dsh-unreal-agentlink`）。如果 peer dependency 守衛擋下了安裝，它會印出接受風險的確切指令 —— **那個決定是你的，不是腳本的**。
+它拒絕碰一個執行中的 DSH 仍持有的 manifest，並在回報成功之前證明 layer 已被合成：`dsh --profile <profile> --dump-config` 必須包含 `# == dsh-unreal-agentlink`；只有 `desktop` 例外 —— CLI 不會合成該 profile，那裡改由 `dsh plugin --profile desktop list` 證明，它讀的是同一份套件依賴圖。如果 peer dependency 守衛擋下了安裝，它會印出接受風險的確切指令 —— **那個決定是你的，不是腳本的**。
 
 另外還有兩條路，兩邊都寫出來了：下面的[不使用指令碼的手動安裝](#不使用指令碼的手動安裝)，以及 [INSTALL-ai.md](../zh-TW/INSTALL-ai.md) —— 一個 AI agent 能讀並逐步照做的版本。
 
@@ -125,7 +125,7 @@ UEBox 桌面版**不是依賴**。它只是同一廠商的另一個用戶端，�
 
 ## 不使用指令碼的手動安裝
 
-上面的指令碼只是個方便；底層機制是四行 manifest 加上一條產品指令。其中 `<profile>` 是 `web`（或任何非 desktop 的 profile），`$DSH_HOME` 預設是 `~/.dsh`：
+上面的指令碼只是個方便；底層機制是四行 manifest 加上一條產品指令。其中 `<profile>` 是 `web` —— `desktop` 也可以，只要做本節末尾提到的那一處替換 —— `$DSH_HOME` 預設是 `~/.dsh`：
 
 ```bash
 # 1. 先建置一次，然後只複製 npm pack 會出貨的東西
@@ -154,7 +154,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 **為什麼 `file:` 指向一份複本，而不是你的工作區**：pnpm 在安裝時會複製它找到的東西，所以一個存到一半的原始檔 —— 或建置失敗後被刪掉的 `lib/` —— 會變成 DSH 載入的那個外掛。先鏡像，再安裝。
 
-**`desktop` profile 沒有 CLI 路徑。** `bin.js:38` 會拒絕它，因為 Electron 應用程式獨佔管理它，而那個應用程式在執行期間會對 `desktop/package.json` 持有一個 `wx` 鎖（`dsh-atomic-write`，而競爭者永不刪除另一個持有者的鎖）。你的選項是 GUI 自己的外掛管理器，或者關掉應用程式後手動做上面四步。先裝進 `web` 再把結果複製過去，是最不侵入的做法。
+**`desktop` profile 是受支援的安裝目標，只有一處 CLI 缺口。** `dsh --profile desktop …` 會被直接拒絕（`bin.js:112`，`rejectElectronProfile`），因為 Electron 應用程式掌管該 profile 的生命週期 —— 但對 `dsh plugin` 這道守衛是有意跳過的（`bin.js:119`），應用程式自己呼叫的 Desktop 隨附 CLI 正依賴這一點（`dsh-desktop-host/lib/cli.js:91-104` 傳入 `manageDesktopProfile: true`）。所以照上面的步驟裝進 `desktop`，只要改兩處：第 4 步換成 `dsh plugin --profile desktop list`，而且必須先把應用程式完全關掉。產品自己的訊息寫得很清楚 —— *「先開啟一次 DeepSeek Harness Desktop 初始化它的 profile，然後在執行 `dsh plugin --profile desktop` 之前把它完全關掉」* —— 因為執行中的應用程式會用記憶體裡的插件清單重寫 manifest，在它底下做的修改可能遺失。裝完後再啟動 Desktop 即可掛載該 layer。
 
 > 上面的步驟 2 已經用一條命令完成了這件事 —— 你只在需要自己控制每一步時才走這條路。
 
@@ -262,7 +262,7 @@ scripts/                    目錄擷取與對帳、文件產生與正規化、
                              語言集合，以及 DSH profile 安裝程式
 docs/                       教學／協定／架構／指令參考／安裝指南，
                              共 9 種語言
-tests/                      173 tests
+tests/                      189 tests
 ```
 
 ### 產生物：請勿手動修改
@@ -279,17 +279,31 @@ npm run build && node scripts/gen-docs.mjs                             # rebuild
 ### 測試與檢查
 
 ```bash
-npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
-npm test                            # 173 passed
+npm run check                       # typecheck (src + tests) + 189 passed + catalog + doc reconciliation
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date
 ```
 
-8 個測試檔案按**它們能發現的缺陷類型**劃分，各有道理 —— 見 [架構第 11 節](../zh-TW/03-architecture.md#11-驗證策略)。
+10 個測試檔案按**它們能發現的缺陷類型**劃分，各有道理 —— 見 [架構第 11 節](../zh-TW/03-architecture.md#11-驗證策略)。
 
 `requires` 不是手寫的：它從 handler 自己的 `SendError(..., 400, "Missing field: X")` 訊息推導而來（共 28 處），因為寫錯一個必填鍵會讓橋接層在引擎看到之前就拒掉一個*合法*呼叫。推導結果落在 `method-data.ts` 的 `REQUIRED_KEYS`，並由 `methods.ts` 的 `requiresOf()` 合併進執行期（`service.call()` 的前置拒絕、`ual_schema` 的 `REQUIRED:` 行、錯誤提示都走這同一個函式）。
 
 它刻意**只收窄、不放大**：訊息中含有 `or`（`"Missing field: name or path"`）的整條跳過；從同檔案中被呼叫的函式裡擷取到的鍵，一律視為分支區域性而丟棄 —— 見 `scripts/extract-methods.mjs` 的 `REQUIRED_DROPPED`，每個條目都標明其 C++ 行號。所以「一個鍵都沒擷取到」是安全的預設，不是漏檢。
+
+### 沒有 Unreal Engine 也能測試
+
+跑本外掛不需要編輯器，也不需要 UEBox —— 接縫就是協議本身：UEBox 是**往外**撥號連到本橋接的，所以一個假編輯器就是一個會應答的 WebSocket 用戶端。
+
+```bash
+npm run smoke                        # 啟動真實服務、接入一個假編輯器，
+                                     # 呼叫全部 12 個工具、驗證每個結果
+npm run smoke -- --out /tmp/ual      # 把執行紀錄與 PNG 存到別處
+npm run smoke -- --method actor.get  # 只跑一個目錄方法，原樣印出
+npm run mock:ue                      # 只要那個假編輯器，方便手動試探
+```
+
+`tools/mock-ue-editor.mjs` 是一個真實行程，不是樁：它撥號連 `ws://127.0.0.1:17860`，推送 `project.info` 與 `system.heartbeat`，轉發 `log.entry` 行，為 `editor.screenshot` 寫出真正的 PNG，並應答**全部 170 個已編目方法** —— 對重要的幾個方法族給出有真實感的回應主體，其餘給出帶文件所述結果鍵的回應主體。`tools/ual-smoke.mjs` 啟動的是 `apply()` 啟動的同一個 `UalService`，透過各工具真正的 `execute` 呼叫每個工具，用該工具自己的輸出 schema 驗證每個值，並印出模型原本會看到的內容。它是 `tests/mock-editor.test.ts` 的手動孿生；兩者都在[架構第 11 節](../zh-TW/03-architecture.md#11-驗證策略)裡描述。
 
 ---
 

@@ -48,7 +48,7 @@ DSH agent  ──tool calls──►  dsh-unreal-agentlink  ◄──WebSocket�
 git clone <this-repo> dsh-unreal-agentlink
 cd dsh-unreal-agentlink
 npm install
-npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconciliation, one command
+npm run check      # typecheck (src + tests) + 189 tests + catalog + doc reconciliation, one command
 ```
 
 先に進む前に `npm run check` が完全にグリーンでなければならない —— ソースとテストが型チェックを通ること、振る舞いのテストが通ること、170 コマンドのカタログが C++ のレジストリと 1 件ずつ一致することを確かめる。
@@ -63,14 +63,14 @@ npm run check      # typecheck (src + tests) + 173 tests + catalog + doc reconci
 
 > **設定のレイヤリング**：後の層はその行の `config` をディープマージではなく**全体置き換え**する。何かを上書きするには、残したいキーをすべて書き直すこと。
 
-DSH にはローカルの out-of-tree プラグインをインストールするコマンドが同梱されておらず、`dsh plugin --profile desktop` は Electron アプリがその profile を独占管理しているためその場で拒否される（`bin.js:38`）。だからこのリポジトリは、その作業を行ってから本当のインストーラに委ねるインストーラを同梱している：
+DSH にはローカルの out-of-tree プラグインをインストールするコマンドが同梱されていない。だからこのリポジトリは、その作業を行ってから本当のインストーラに委ねるインストーラを同梱している：
 
 ```bash
 npm run status:dsh -- --profile web     # 現在登録されている内容（同じスクリプト、npm パススルー）
 node scripts/install-dsh-plugin.mjs --profile web             # ミラー、manifest の編集、インストール、検証
 ```
 
-それは `desktop` profile を拒否し、動作中の DSH がまだ保持している manifest に触ることを拒否し、成功を報告する前に layer が合成されていることを証明する（`dsh --profile web --dump-config` に `# == dsh-unreal-agentlink` が含まれていなければならない）。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
+動作中の DSH がまだ保持している manifest には触れず、成功を報告する前に layer が合成されていることを証明する：`dsh --profile <profile> --dump-config` に `# == dsh-unreal-agentlink` が含まれていなければならない。ただし `desktop` だけは CLI が合成しないので、そこでは同じパッケージグラフを読む `dsh plugin --profile desktop list` で layer を証明する。ピア依存のガードがインストールを止めた場合、リスクを受け入れるための正確なコマンドが出力される —— **その決定はあなたのものであって、スクリプトのものではない**。
 
 あと 2 つの道のりがあり、どちらも文章化されている：下記の[スクリプトなしで手動インストールする](#スクリプトなしで手動インストールする)と、[INSTALL-ai.md](../ja/INSTALL-ai.md) —— AI エージェントが読んで順番に実行できるバージョン。
 
@@ -125,7 +125,7 @@ UEBox デスクトップアプリは**依存関係ではない**。同じベン�
 
 ## スクリプトなしで手動インストールする
 
-上記のスクリプトは便利さのためのものだ。根底にある機構は 4 行の manifest と 1 つの製品コマンドだ。`<profile>` は `web`（または desktop 以外の任意の profile）であり、`$DSH_HOME` はデフォルトで `~/.dsh` とする：
+上記のスクリプトは便利さのためのものだ。根底にある機構は 4 行の manifest と 1 つの製品コマンドだ。`<profile>` は `web` —— `desktop` も、この節の最後に記した 1 か所の置き換えだけで動く —— とし、`$DSH_HOME` はデフォルトで `~/.dsh` とする：
 
 ```bash
 # 1. 一度ビルドし、npm pack が出すものだけをコピーする
@@ -154,7 +154,7 @@ dsh --profile <profile> --dump-config | grep -A2 '# == dsh-unreal-agentlink'
 
 **なぜ `file:` がコピーを指すのか、作業スペースを指さないのか**：pnpm はインストール時に見つけたものをコピーするので、半分保存されたソースファイル —— あるいはビルド失敗後に削除された `lib/` —— が DSH が読み込むプラグインになってしまう。まずミラーし、次にインストールする。
 
-**`desktop` profile に CLI 経路はない。** `bin.js:38` はそれを拒否する。Electron アプリケーションが独占管理しており、そのアプリは動作中 `desktop/package.json` に `wx` ロックを保持している（`dsh-atomic-write`。競合者は他の保持者のロックを決して削除しない）。選択肢は GUI 自身のプラグインマネージャを使うか、アプリを閉じて上記 4 ステップを手動で行うかだ。最初に `web` にインストールして結果をコピーするのが最も侵襲性が低い。
+**`desktop` profile はサポートされた対象であり、CLI に 1 つだけ欠けがある。** `dsh --profile desktop …` は（`bin.js:112`、`rejectElectronProfile` により）きっぱり拒否される —— Electron アプリがその profile のライフタイムを独占しているからだ。だが `dsh plugin` に対してはこのガードが意図的に飛ばされる（`bin.js:119`）。アプリ自身が呼び出す Desktop 同梱の CLI はまさにそれに依存している（`dsh-desktop-host/lib/cli.js:91-104` が `manageDesktopProfile: true` を渡す）。だから上記のとおり `desktop` にインストールすればよい。変更点は 2 つ：ステップ 4 は `dsh plugin --profile desktop list` になり、アプリは事前に完全に終了しておく必要がある。製品自身のメッセージがそれを明言している —— *「DeepSeek Harness Desktop を一度起動して profile を初期化し、その後完全に終了してから dsh plugin --profile desktop を実行してください」* —— 動作中のアプリはメモリ上のプラグイン一覧から manifest を書き戻すため、その下で行った編集は失われうる。あとから Desktop を起動すれば layer がマウントされる。
 
 ---
 
@@ -260,7 +260,7 @@ scripts/                    カタログ抽出と照合、ドキュメント生�
                             言語セット、DSH profile インストーラ
 docs/                       チュートリアル / プロトコル / アーキテクチャ / コマンドリファレンス / インストールガイド、
                             9 言語対応
-tests/                      173 tests
+tests/                      189 tests
 ```
 
 ### 生成ファイル：手で編集しないこと
@@ -277,17 +277,31 @@ npm run build && node scripts/gen-docs.mjs                             # rebuild
 ### テストとチェック
 
 ```bash
-npm run check                       # typecheck (src + tests) + 173 passed + catalog + doc reconciliation
-npm test                            # 173 passed
+npm run check                       # typecheck (src + tests) + 189 passed + catalog + doc reconciliation
+npm test                            # 189 passed
 node scripts/check-catalog.mjs      # 170/170 zero drift; every requires key appears in C++; code set matches C++
 node scripts/gen-docs.mjs --check   # is the command reference up to date in all 9 languages
 ```
 
-8 つのテストファイルは**それらが見つけられる欠陥の種類**で分かれており、それぞれに理由がある —— [アーキテクチャ §11](../ja/03-architecture.md#11-検証戦略) を参照。
+10 個のテストファイルは**それらが見つけられる欠陥の種類**で分かれており、それぞれに理由がある —— [アーキテクチャ §11](../ja/03-architecture.md#11-検証戦略) を参照。
 
 `requires` は手書きではない：ハンドラ自身の `SendError(..., 400, "Missing field: X")` メッセージ（28 箇所）から導出される。必須キーを 1 つ書き間違えると、エンジンが見る前にブリッジが*正当な*呼び出しを拒否してしまうからだ。結果は `method-data.ts` の `REQUIRED_KEYS` として格納され、`methods.ts` の `requiresOf()` がそれを実行時にマージする（`service.call()` の早期拒否、`ual_schema` の `REQUIRED:` 行、エラーヒントはすべてこの 1 つの関数を通る）。
 
 これは意図的に**狭めるだけで、広げることはない**：`or` を含むメッセージ（`"Missing field: name or path"`）はまるごとスキップされ、同じファイル内の呼び出し先関数から採取したキーは分岐ローカルとして破棄される —— `scripts/extract-methods.mjs` の `REQUIRED_DROPPED` を参照。各エントリには C++ の行番号が書かれている。つまり「1 つも採取されなかった」は安全なデフォルトであって、見落としではない。
+
+### Unreal Engine なしでテストする
+
+このプラグインを動かすのに、エディタも UEBox も要らない —— 継ぎ目はプロトコルそのものだ：UEBox はこのブリッジへ**外向きに**接続するので、偽のエディタは応答する WebSocket クライアントにすぎない。
+
+```bash
+npm run smoke                        # 本物のサービスを起動し、偽のエディタを接続し、
+                                     # 12 個のツールをすべて呼び、各結果を検証する
+npm run smoke -- --out /tmp/ual      # 記録と PNG を別の場所に残す
+npm run smoke -- --method actor.get  # カタログの 1 メソッドだけを生のまま表示する
+npm run mock:ue                      # 偽のエディタだけを起動し、手で触ってみる
+```
+
+`tools/mock-ue-editor.mjs` はスタブではなく本物のプロセスだ：`ws://127.0.0.1:17860` に接続し、`project.info` と `system.heartbeat` をプッシュし、`log.entry` の行を転送し、`editor.screenshot` 用に本物の PNG を書き出し、**カタログ化された 170 メソッドすべて**に応答する —— 重要な系統には現実的なボディを、残りにはドキュメント化された結果キーを持つボディを返す。`tools/ual-smoke.mjs` は `apply()` が起動するのと同じ `UalService` を起動し、各ツールをその本物の `execute` 経由で呼び、各値をそのツール自身の出力スキーマに対して検証し、モデルが見ていたであろうものを表示する。`tests/mock-editor.test.ts` の手動版の双子であり、どちらも [アーキテクチャ §11](../ja/03-architecture.md#11-検証戦略) で説明している。
 
 ---
 

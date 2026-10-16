@@ -43,7 +43,7 @@ scripts/
   install-dsh-plugin.mjs     enregistre ce plugin dans un profil dsh (miroir, manifeste, installation, vérification)
 docs/                   tutoriel / protocole / architecture / référence des commandes / guide d'installation,
                          ×9 langues
-tests/                  173 tests dans 9 fichiers
+tests/                  189 tests dans 10 fichiers
 ```
 
 ### Direction des dépendances
@@ -249,7 +249,7 @@ ce qui équivaut à :
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests (src's tsconfig does not include tests)
-vitest run                         # 173 tests
+vitest run                         # 189 tests
 node scripts/check-catalog.mjs     # 4 reconciliation checks
 node scripts/gen-docs.mjs --check  # référence des commandes à jour dans 9 langues
 node scripts/normalize-doc-headers.mjs --check   # barres de langue canoniques dans 54 fichiers
@@ -257,7 +257,7 @@ node scripts/normalize-doc-links.mjs --check     # les liens du corps se résolv
 npm run install:dsh -- --profile web    # enregistrer ce plugin dans un profil dsh
 ```
 
-Les tests vivent dans 9 fichiers, divisés selon **le type de défaut qu'ils peuvent détecter** :
+Les tests vivent dans 10 fichiers, divisés selon **le type de défaut qu'ils peuvent détecter** :
 
 | Fichier | Couvre |
 |---|---|
@@ -270,10 +270,15 @@ Les tests vivent dans 9 fichiers, divisés selon **le type de défaut qu'ils peu
 | `i18n.test.ts` | la documentation est complète et cohérente en interne, dans les 9 langues |
 | `end-to-end.test.ts` | la vraie chaîne de contrôles + une vraie socket + les vrais schémas d'outils |
 | `installer.test.ts` | l'installateur de profil DSH : traitement des arguments, les deux entrées de manifeste, la frontière du miroir, le refus sur verrou |
+| `mock-editor.test.ts` | toute la surface contre un vrai **processus** de faux éditeur : 170 allers-retours socket et les 12 outils |
 
 **Pourquoi `end-to-end.test.ts` doit exister** : tous les autres tests simulent une couche. Le bug `REQUIRED_KEYS` — généré, documenté, revu, jamais importé — n'a été attrapé par aucun test unitaire, parce que chaque couche était cohérente avec elle-même en isolation. Seul le câblage de la vraie chaîne de contrôles à une vraie socket, nourri par un vrai schéma, expose **la jointure entre les couches**.
 
 Pour la même raison, `tool-output.test.ts` utilise les **vrais** `snapshotJsonValue` + `validateJsonSchemaValue` plutôt que d'écrire sa propre vérification de schéma — sinon le défaut `undefined` de `ual_status` passerait tout aussi bien.
+
+`mock-editor.test.ts` ferme la dernière jointure, et il existe parce que la machine sur laquelle ce plugin a été construit n'a **aucun Unreal Engine installé du tout**. Tous les autres tests répondent avec un objet `FakeEditor` dans le même processus — ce qui est la bonne forme pour figer la chaîne de contrôles, et c'est ce que fait `end-to-end.test.ts` — mais un objet dans le même processus ne peut pas montrer que les trames survivent à une vraie socket, qu'un vrai push `project.info` fait que `ual_status` identifie un éditeur, ou que les 170 méthodes cataloguées sont réellement joignables de bout en bout. C'est pourquoi `tools/mock-ue-editor.mjs` s'exécute comme **processus enfant** : il se connecte comme le fait UEBox, et le test le pilote à travers le vrai `UalService`. `tools/ual-smoke.mjs` est le même montage avec un humain au clavier — il appelle les 12 outils, valide chaque résultat contre le schéma de sortie de cet outil, affiche ce que le modèle aurait vu et conserve le PNG.
+
+Il a trouvé un vrai défaut dès sa première exécution. `ual_logs { pullMessageLog: true }` appelait `messagelog.list` avec un `limit` que ce gestionnaire ne lit jamais — `UAL_MessageLogCommands.cpp:76` ne prend **aucun paramètre** — puis emballait l'*arbre de catégories* reçu comme une seule « ligne de log », si bien que le modèle voyait une ligne vide quoi que l'éditeur ait à dire. Les lignes se trouvent derrière `messagelog.get`, qui a besoin d'un nom de catégorie. La branche de pull lit désormais l'arbre de catégories quand on lui en demande un et les lignes de cette catégorie quand on lui donne une `category`, et `source` indique laquelle des trois réponses l'appelant regarde.
 
 ---
 

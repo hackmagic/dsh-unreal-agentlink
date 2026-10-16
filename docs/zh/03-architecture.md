@@ -41,7 +41,7 @@ scripts/
   normalize-doc-links.mjs    重写正文链接，使其从所在文件位置能解析
   install-dsh-plugin.mjs     把本插件注册进一个 dsh profile（镜像、manifest、安装、验证）
 docs/                   教程 / 协议 / 架构 / 命令参考 / 安装指南，共 9 种语言
-tests/                  173 个测试，9 个文件
+tests/                  189 个测试，10 个文件
 ```
 
 ### 依赖方向
@@ -247,7 +247,7 @@ npm run check
 ```bash
 tsc -p tsconfig.json --noEmit      # src
 tsc -p tsconfig.test.json          # tests（src 的 tsconfig 不含 tests）
-vitest run                         # 173 个测试
+vitest run                         # 189 个测试
 node scripts/check-catalog.mjs     # 4 项对账
 node scripts/gen-docs.mjs --check  # 9 种语言的命令参考是否为最新
 node scripts/normalize-doc-headers.mjs --check   # 54 份文档的语言栏是否都是规范形
@@ -255,7 +255,7 @@ node scripts/normalize-doc-links.mjs --check     # 正文链接是否从所在�
 npm run install:dsh -- --profile web    # 把本插件注册进一个 dsh profile
 ```
 
-测试分 9 个文件，按**它们能发现的缺陷类型**划分：
+测试分 10 个文件，按**它们能发现的缺陷类型**划分：
 
 | 文件 | 覆盖 |
 |---|---|
@@ -268,12 +268,17 @@ npm run install:dsh -- --profile web    # 把本插件注册进一个 dsh profil
 | `i18n.test.ts` | 9 种语言下文档都完整且内部自洽 |
 | `end-to-end.test.ts` | 真实门链 + 真实 socket + 工具 schema |
 | `installer.test.ts` | DSH profile 安装器：参数处理、两条 manifest 条目、镜像边界、拒绝持锁 |
+| `mock-editor.test.ts` | 面对一个真实假编辑器**进程**的整个表面：170 次 socket 往返与全部 12 个工具 |
 
 **为什么要有 `end-to-end.test.ts`**：其他测试各自 stub 掉一层。而 `REQUIRED_KEYS` 那个 bug —— 生成、文档化、review 过、从未被 import —— 没有任何单元测试发现它，因为每一层单独看都自洽。只有把真实门链接上真实 socket，再喂给真实 schema，才能发现「这一层和那一层之间的缝」。
 
 同理，`tool-output.test.ts` 用**真实**的 `snapshotJsonValue` + `validateJsonSchemaValue`，而不是自己写一个 schema 检查 —— 否则 `ual_status` 的 `undefined` 缺陷照样漏掉。
 
-`installer.test.ts` 因第三个理由存在：安装器是这里唯一会写到**本仓库之外**的脚本，所以它一旦坏了，套件里没有任何其他东西会注意到。它用一个临时 profile 目录（`--profile-dir`）跑真实脚本，配一个会打印层标记的 `dsh` 桩 —— 也就是整个安装器减去它最后交还给产品的那一步。它钉住的正是单元测试里看不见的那些事：bundle 需要**同时**有依赖条目和 `dsh.profile.bundles` 条目，而且两者失败方式不同（列了却不是 bundle 会在启动时大声失败；装好却没列出则完全不贡献层）；manifest 会保留用户已有的每一个键；第二次运行什么都不会改；镜像只复制 `npm pack` 会发布的内容，所以 `.audit-tmp/` 不可能变成 dsh 加载的插件；持锁的 manifest 是被拒绝而不是被强夺。desktop 拒绝也被钉住，因为 `bin.js:38` 意味着一个自称能装的安装器只会写出一份操作员无法激活的 manifest。
+`installer.test.ts` 因第三个理由存在：安装器是这里唯一会写到**本仓库之外**的脚本，所以它一旦坏了，套件里没有任何其他东西会注意到。它用一个临时 profile 目录（`--profile-dir`）跑真实脚本，配一个会打印层标记的 `dsh` 桩 —— 也就是整个安装器减去它最后交还给产品的那一步。它钉住的正是单元测试里看不见的那些事：bundle 需要**同时**有依赖条目和 `dsh.profile.bundles` 条目，而且两者失败方式不同（列了却不是 bundle 会在启动时大声失败；装好却没列出则完全不贡献层）；manifest 会保留用户已有的每一个键；第二次运行什么都不会改；镜像只复制 `npm pack` 会发布的内容，所以 `.audit-tmp/` 不可能变成 dsh 加载的插件；持锁的 manifest 是被拒绝而不是被强夺。`desktop` profile 同样被钉住，而这正是这套测试要抓的陷阱：第一版安装器 —— 以及围绕它的每一份文档 —— 都凭 `bin.js:38` 直接拒绝了 `desktop`，而那句引用说的是*启动*守卫，却被读成了也管 `dsh plugin`。它并不管（`bin.js:119` 豁免了它，产品自己的 `requireDesktopProfile` 消息就告诉操作员去跑 `dsh plugin --profile desktop`），所以那次拒绝删掉了通往 Desktop 应用实际使用的那个 profile 的唯一 CLI 路径。测试现在钉住的是反面：安装器接受 `desktop`，警告说必须先退出应用，并且通过 `pnpm list` 而不是 `--dump-config` 来证明该层 —— 对那个 profile，`bin.js:112` 永远不会产出它。
+
+`mock-editor.test.ts` 补上最后一道缝，它之所以存在，是因为本插件开发时所用的机器**根本没有装 Unreal Engine**。其他测试都用进程内的 `FakeEditor` 对象应答 —— 对钉住门链来说这是正确的形态，`end-to-end.test.ts` 就是这么做的 —— 但同一进程里的对象无法证明帧能挺过一次真实 socket、真实的 `project.info` 推送能让 `ual_status` 认出一个编辑器、或者全部 170 个已编目方法真的都能端到端应答。所以 `tools/mock-ue-editor.mjs` 作为**子进程**运行：它按 UEBox 的方式拨号接入，测试通过真实的 `UalService` 驱动它。`tools/ual-smoke.mjs` 是同一套装置，只是键盘前坐着人 —— 它调用全部 12 个工具，用每个工具自己的输出 schema 校验每个结果，打印模型本会看到的内容，并把 PNG 留下来。
+
+它第一次运行就抓到一个真实缺陷。`ual_logs { pullMessageLog: true }` 调用 `messagelog.list` 时带了一个该 handler 从不读取的 `limit` —— `UAL_MessageLogCommands.cpp:76` **不接收任何参数** —— 然后把拿回来的*类别树*当成一行「日志行」包了起来，于是不管编辑器要说什么，模型看到的都是一行空白。行藏在 `messagelog.get` 后面，它需要一个类别名。现在 pull 分支在被要求拿类别树时读类别树，在被给了 `category` 时读该类别的行，而 `source` 会说明调用方看到的是三种答案里的哪一种。
 
 `i18n.test.ts` 出于同样的理由，针对的是另一道缝。`src/` 底下的一切对 `docs/` 一无所知，所以现有测试无法发现某份翻译在语言栏里漏了一种语言、或指向了它自己改过名的标题。它改成把文档当资料读：每种语言都有那五个文件，每一栏都列出全部九种语言且只把自己的那份加粗，每一个相对链接都能解析到真实文件，每一个 `#anchor` 都能解析到真实标题。最后一项才是有趣的那项 —— 锚点是从*译文*标题文字推导出来的，所以翻译者一旦改写「Verification strategy」，指向该节的每一个链接都会静默失效，而任何地方都不会报错。`gen-docs.mjs --check` 以同样方式守着生成出来的命令参考；`i18n.test.ts` 是调用它，而不是重新实现一遍渲染。
 

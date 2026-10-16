@@ -115,9 +115,12 @@ dsh 는 프로파일 manifest 를 `wx` 로 생성한 `.lock` 형제 파일로 �
 
 - `web` 프로파일: 실행 중인 DeepSeek Harness 데스크톱 앱을 닫거나, 잡혀 있지 않은
   프로파일을 고르세요.
-- `desktop` 프로파일: CLI 가 **금지**됩니다(`bin.js:38`
-  `rejectElectronProfile`); 오직 Electron 앱만이 그것을 관리할 수 있으며, 앱을 닫고
-  손으로 편집해야 합니다.
+- `desktop` 프로파일: CLI 의 *부팅* 명령은 **금지**됩니다(`bin.js:112`
+  `rejectElectronProfile`), 하지만 `dsh plugin --profile desktop …` 은 의도적으로
+  예외입니다(`bin.js:119`) — 앱 자체가 호출하는 Desktop 내장 CLI 가 쓰는 경로입니다.
+  제품은 앱을 먼저 완전히 종료할 것을 요구합니다. 실행 중인 앱은 자체 플러그인
+  목록에서 manifest 를 다시 쓰기 때문입니다. 앱을 종료하고 설치를 실행한 뒤, 이후
+  Desktop 을 실행하면 레이어가 마운트됩니다.
 - 스크립트는 거부하고 소유자를 알려줍니다; 락을 억지로 풀지 않습니다.
 
 ---
