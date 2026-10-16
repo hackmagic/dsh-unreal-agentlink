@@ -5,9 +5,9 @@
  * ---------------
  * DSH ships no command that installs a LOCAL, out-of-tree plugin into a profile.
  * The two shipped paths are:
- *   - `dsh plugin --profile <name> add <pkg>`  — pnpm in that profile's dir, and
- *     it is refused outright for the `desktop` profile (`bin.js:38`
- *     `rejectElectronProfile`), which only the Electron app may manage.
+ *   - `dsh plugin --profile <name> add <pkg>`  — pnpm in that profile's dir.
+ *     `plugin` is deliberately exempt from the Electron-profile guard
+ *     (`bin.js:119`), so it is the supported CLI path into `desktop` too.
  *   - hand-editing `<profile>/package.json` (dependency entry) AND
  *     `dsh.profile.bundles` (patch-layer entry). Both are mandatory: a listed
  *     package that declares no `dsh.bundle` fails loud, and an installed package
@@ -26,6 +26,23 @@
  * ("Update the plugin or install a compatible version"); this project pins
  * 0.1.6-alpha.2 peer ranges while the shipped dsh is 0.2.0-rc.2, so the install
  * stops there on purpose and prints the exact command to accept the risk.
+ *
+ * THE `desktop` PROFILE
+ * ---------------------
+ * `dsh --profile desktop …` is refused outright (`bin.js:112`,
+ * `rejectElectronProfile`) because the Electron app owns that profile's
+ * lifetime. `dsh plugin` is exempt (`bin.js:119`), and the CLI the Desktop app
+ * itself launches relies on that (`dsh-desktop-host/lib/cli.js:91-104` passes
+ * `manageDesktopProfile: true`). The product's own `requireDesktopProfile`
+ * message spells the procedure out — "Open DeepSeek Harness Desktop once to
+ * initialize its profile, then fully quit it before running dsh plugin
+ * --profile desktop" — so that is what this script expects: quit the app, run
+ * the install, and let Desktop mount the layer on its next launch.
+ *
+ * One consequence: because the CLI will not COMPOSE the desktop profile, the
+ * `--dump-config` proof used everywhere else cannot run there. The layer is
+ * proven through `dsh plugin --profile desktop list` instead, which reads the
+ * same package graph.
  *
  * Usage:
  *   node scripts/install-dsh-plugin.mjs --profile web            # install
@@ -292,11 +309,13 @@ function refuseIfLocked(manifestPath) {
 async function main() {
   const args = parseArgs(process.argv.slice(2))
   if (!args.profile) fail('--profile <name> is required (e.g. web)')
-  if (args.profile.toLowerCase() === 'desktop' && !args.remove) {
-    console.error('install: the desktop profile is managed exclusively by the Electron application')
-    console.error('install: (dsh bin.js:38 rejectElectronProfile). Close the app, or install into')
-    console.error('install: the web profile instead, then copy the result by hand.')
-    process.exit(1)
+  const isDesktop = args.profile.toLowerCase() === 'desktop'
+  if (isDesktop && !args.status && !args.remove) {
+    console.log('install: `desktop` is the profile the Electron app boots. `dsh plugin` may manage')
+    console.log('install: it, but the product asks for the app to be fully quit first, because a')
+    console.log('install: running app rewrites the manifest from its own plugin list:')
+    console.log('install:   Open DeepSeek Harness Desktop once to initialize its profile, then fully')
+    console.log('install:   quit it before running dsh plugin --profile desktop.')
   }
   const dshBin = resolveDsh(args.dsh)
   const profileDir = args.profileDir ? path.resolve(args.profileDir) : path.join(profilesRoot(), args.profile)
@@ -374,6 +393,25 @@ async function main() {
 
   // A bundle that is listed but declares no `dsh.bundle` fails loud at boot, so
   // the last check is the one that actually proves the layer is composed.
+  //
+  // `dsh --profile desktop --dump-config` cannot be that check: the guard at
+  // bin.js:112 refuses to boot the Electron profile from the CLI at all. The
+  // equivalent proof there is pnpm's own resolution of the same package graph.
+  if (isDesktop) {
+    const listed = run(dshBin, ['plugin', '--profile', args.profile, 'list'], { encoding: 'utf8' })
+    const text = `${listed.stdout ?? ''}${listed.stderr ?? ''}`
+    const escaped = NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (!new RegExp(`^[\\s│├└─-]*${escaped}@`, 'm').test(text)) {
+      console.error(`install: installed, but pnpm does not list ${NAME} in profile "${args.profile}"`)
+      console.error(text.trim())
+      process.exit(1)
+    }
+    console.log(`install: ${NAME} is now a dependency and bundle layer of profile "${args.profile}"`)
+    console.log('install: the CLI will not compose the desktop profile, so the layer was proven')
+    console.log('install: through pnpm; launch DeepSeek Harness Desktop to mount it.')
+    return
+  }
+
   const dumped = run(dshBin, ['--profile', args.profile, '--dump-config'], { encoding: 'utf8' })
   const composed = dumped.stdout ?? ''
   if (!composed.includes(`# == ${NAME}`)) {

@@ -17,9 +17,13 @@ import { afterAll, describe, expect, it } from 'vitest'
  * installation and without touching the operator's real profiles:
  *
  *   - argument parsing rejects nonsense instead of guessing;
- *   - the `desktop` profile is refused, because the product itself refuses it
- *     (`bin.js:38 rejectElectronProfile`) and pretending otherwise would send an
- *     operator down a path that cannot work;
+ *   - the `desktop` profile is ACCEPTED, because the product's own guard exempts
+ *     `dsh plugin` from it (`bin.js:119`) and the product's own error message
+ *     tells operators to run `dsh plugin --profile desktop`. Reading the boot
+ *     guard at `bin.js:112` as if it covered `plugin` is the mistake this test
+ *     exists to prevent: it once made the installer remove the only CLI path
+ *     into the profile the Desktop app actually uses;
+ *   - a read-only `--status` is never gated on that premise at all;
  *   - the manifest edit is exactly two lines — one dependency entry and one
  *     bundle entry — because a bundle needs BOTH: a listed package that declares
  *     no `dsh.bundle` fails loud at boot, and an installed package that is not
@@ -29,9 +33,11 @@ import { afterAll, describe, expect, it } from 'vitest'
  *     a live workspace with a half-saved source file or a stray `.audit-tmp/`.
  *
  * Everything else in the installer — calling pnpm, the peer-dependency guard,
- * `--dump-config` verification — runs only against a real dsh, which is why the
+ * the composed-tree verification — runs only against a real dsh, which is why the
  * script defers to `dsh plugin --profile <name> install` instead of
  * reimplementing it. Testing that here would mean testing dsh, not this plugin.
+ * The desktop fallback to `dsh plugin --profile desktop list` is covered with a
+ * stub that answers `plugin` the way pnpm does.
  *
  * A fake profile directory is used throughout: `--vendor-dir` and `--dsh` let the
  * script be pointed away from the operator's real `$DSH_HOME`, and `--no-mirror`
@@ -81,12 +87,24 @@ const SCRIPT = join(ROOT, 'scripts', 'install-dsh-plugin.mjs')
    * exercises the whole script instead of stopping at the manifest edit. A stub
    * that stayed silent would make every install report failure for a reason that
    * has nothing to do with this project.
+   *
+   * `plugin … list` is answered the way pnpm answers it, because the desktop
+   * profile cannot be proven with `--dump-config` (bin.js:112 refuses to boot it
+   * from the CLI) and the installer falls back to that subcommand there.
    */
-  const dshStub = (dir: string) => {
+  const dshStub = (dir: string, opts: { lists?: boolean } = {}) => {
+    const listed = opts.lists === false ? '- some-other-plugin@1.0.0' : '- dsh-unreal-agentlink@file:.vendor'
     const stub = join(dir, 'dsh-stub.cmd')
     writeFileSync(
       stub,
       '@echo off\r\n' +
+        'if "%1"=="plugin" (\r\n' +
+        'echo Legend: production dependency\r\n' +
+        'echo.\r\n' +
+        'echo   dependencies:\r\n' +
+        `echo ${listed}\r\n` +
+        'exit /b 0\r\n' +
+        ')\r\n' +
         'echo # == dsh-unreal-agentlink\r\n' +
         'echo - id: unreal-agentlink\r\n' +
         'echo   name: dsh-unreal-agentlink\r\n' +
@@ -101,8 +119,9 @@ const SCRIPT = join(ROOT, 'scripts', 'install-dsh-plugin.mjs')
    * `--no-mirror` by default so a test that only asserts the manifest edit does
    * not copy 60+ files; the mirror test overrides it.
    */
-  const against = (dir: string, extra: string[] = ['--no-mirror']) => [    '--profile',
-    'test',
+  const against = (dir: string, extra: string[] = ['--no-mirror'], profile = 'test') => [
+    '--profile',
+    profile,
     '--yes',
     ...extra,
     '--profile-dir',
@@ -126,13 +145,16 @@ const SCRIPT = join(ROOT, 'scripts', 'install-dsh-plugin.mjs')
     expect(r.stderr).toContain('unknown argument --nonsense')
   })
 
-  it('refuses the desktop profile, which the product refuses too', () => {
-    // `dsh plugin --profile desktop` is rejected by bin.js:38 — the Electron app
-    // manages that profile exclusively. An installer that claimed otherwise would
-    // write a manifest the operator cannot activate.
-    const r = run(['--profile', 'desktop', '--yes'])
-    expect(r.status).not.toBe(0)
-    expect(r.stderr).toContain('managed exclusively by the Electron application')
+  it('does not refuse the desktop profile: `dsh plugin` is the product path into it', () => {
+    // `dsh --profile desktop …` is rejected by bin.js:112, but `dsh plugin` is
+    // deliberately exempt (bin.js:119), and the product's own requireDesktopProfile
+    // error tells the operator to run exactly that command. An installer that
+    // still refused would leave the app's own profile with no CLI path at all.
+    // A read-only --status must never be gated, least of all on that premise.
+    const r = run(['--profile', 'desktop', '--status', '--profile-dir', 'no-such-profile-xyz', '--dsh', 'unused'])
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('not initialized')
+    expect(r.stderr).not.toContain('managed exclusively')
   })
 
   it('reports a profile that was never initialized instead of creating one', () => {
@@ -164,6 +186,54 @@ describe('install-dsh-plugin manifest edit', () => {
     expect(after.dsh.profile.bundles).toContain('dsh-unreal-agentlink')
     // A bundle needs both registrations; only one of them is a no-op at boot.
     expect(after.dsh.profile.bundles).toHaveLength(2)
+  })
+
+  it('installs into the desktop profile and asks for the app to be quit first', () => {
+    const dir = fakeProfile()
+    dirs.push(dir)
+
+    const r = run(against(dir, ['--no-mirror'], 'desktop'))
+    expect(r.status).toBe(0)
+    // `dsh plugin` may manage the profile, but a running app rewrites the
+    // manifest from its own plugin list, so the operator is told to quit it.
+    expect(r.stdout).toContain('fully')
+    expect(r.stdout).toContain('quit')
+
+    const after = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+    expect(after.dependencies['dsh-unreal-agentlink']).toContain('file:')
+    expect(after.dsh.profile.bundles).toContain('dsh-unreal-agentlink')
+  })
+
+  it('proves the desktop layer through pnpm, because the CLI will not compose it', () => {
+    const dir = fakeProfile()
+    dirs.push(dir)
+
+    const r = run(against(dir, ['--no-mirror'], 'desktop'))
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('through pnpm')
+    // `dsh --profile desktop --dump-config` is refused by bin.js:112, so that
+    // proof must not be claimed for this profile.
+    expect(r.stdout).not.toContain('is now a bundle layer of profile')
+  })
+
+  it('fails the desktop verification when pnpm does not list the package', () => {
+    const dir = fakeProfile()
+    dirs.push(dir)
+
+    const r = run([
+      '--profile',
+      'desktop',
+      '--yes',
+      '--no-mirror',
+      '--profile-dir',
+      dir,
+      '--vendor-dir',
+      join(dir, '.vendor'),
+      '--dsh',
+      dshStub(dir, { lists: false }),
+    ])
+    expect(r.status).not.toBe(0)
+    expect(r.stderr).toContain('does not list dsh-unreal-agentlink')
   })
 
   it('mirrors only what npm pack ships, never the live workspace', () => {
