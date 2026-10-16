@@ -1,0 +1,12 @@
+# Every documentation script and i18n test in this repo reads its files byte-wise and
+# splits on "\n": `normalize-doc-headers.mjs`, `normalize-doc-links.mjs` and
+# `gen-docs.mjs --check` all compare a rewrite against the bytes on disk. With git's
+# `core.autocrlf=true` (the default of the Git for Windows build bundled here) a fresh
+# checkout hands those files CRLF endings, the comparison sees a difference on every
+# line, and `npm run check` reports "header is not canonical in N file(s)" even though
+# the committed content is correct.
+#
+# Forcing LF in the worktree keeps the checkout byte-identical to the blobs, so the
+# checks measure the docs rather than the checkout. There are no `.cmd`/`.bat` files
+# here that would need CRLF.
+* text=auto eol=lf
