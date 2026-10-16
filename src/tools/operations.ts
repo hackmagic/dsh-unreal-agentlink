@@ -221,7 +221,7 @@ export function makeOperationTools(
       contains: { type: 'string', description: 'substring of the message' },
       sinceSeq: { type: 'integer', description: 'only lines newer than this seq (the last seq you already read)' },
       limit: { type: 'integer', description: 'most recent N lines, newest last (default 40, max 200)' },
-      pullMessageLog: { type: 'boolean', description: 'instead of the ring, pull the engine Message Log via messagelog.list' },
+      pullMessageLog: { type: 'boolean', description: 'instead of this bridge\u2019s ring, read the engine Message Log: with category given it returns that category\u2019s lines, otherwise the list of categories that currently have one' },
     },
     output: {
       schema: {
@@ -232,19 +232,23 @@ export function makeOperationTools(
           count: { type: 'integer', required: true },
           lastSeq: { type: 'integer', required: true },
           entries: { type: 'array', items: { type: 'json' }, required: true },
+          source: { type: 'string', description: 'ring (this bridge captured the lines), message-log-categories, or message-log-lines (pulled from the engine Message Log)' },
           hint: { type: 'string' },
         },
       },
       render: (_args, value) => {
-        const record = value as { count: number; lastSeq: number; entries: JsonValue[]; hint?: string }
+        const record = value as { count: number; lastSeq: number; entries: JsonValue[]; source?: string; hint?: string }
         if (record.count === 0) {
           return [{ type: 'text', text: `no matching UE log lines (ring holds ${record.lastSeq} total).\n  ${record.hint ?? ''}` }]
         }
-        const lines = [`${record.count} UE log line(s), newest last, lastSeq=${record.lastSeq}`]
+        const lines = record.source === 'message-log-categories'
+          ? [`${record.count} engine Message Log categor${record.count === 1 ? 'y' : 'ies'}:`]
+          : [`${record.count} UE log line(s)${record.source === 'message-log-lines' ? ' from the engine Message Log' : ''}, newest last, lastSeq=${record.lastSeq}`]
         for (const raw of record.entries) {
           const entry = raw as { level?: string; category?: string; text?: string }
           lines.push(`  ${entry.level ?? ''} ${entry.category ?? ''}: ${String(entry.text ?? '').slice(0, 400)}`)
         }
+        if (record.source === 'message-log-categories' && record.hint) lines.push(`  ${record.hint}`)
         return [{ type: 'text', text: clip(lines.join('\n'), 20_000) }]
       },
       presentationMeta: (_args, value) => {
@@ -256,11 +260,59 @@ export function makeOperationTools(
     async execute(args, exec) {
       const { session } = sessionOf(exec)
       if (args.pullMessageLog === true) {
-        const outcome = await service.call({ method: 'messagelog.list', params: { limit: args.limit ?? 40 }, session, signal: exec.signal })
-        if (!outcome.value.ok) {
-          return { ok: false, count: 0, lastSeq: 0, entries: [], hint: outcome.translated?.hint }
+        // `messagelog.list` takes NO parameters and answers with the Message Log's
+        // *category tree* (`categories: [{name, label}]`); the lines live behind
+        // `messagelog.get`, which needs one category name. Asking `list` for lines
+        // — which this branch used to do, sending a `limit` the handler ignores and
+        // wrapping the category payload as a single "log line" — rendered exactly
+        // one blank row, whatever the editor had to say.
+        if (args.category !== undefined && args.category.length > 0) {
+          const outcome = await service.call({ method: 'messagelog.get', params: { category: args.category }, session, signal: exec.signal })
+          if (!outcome.value.ok) {
+            return { ok: false, count: 0, lastSeq: service.latestLogSeq(), entries: [], source: 'message-log-lines', ...(outcome.translated ? { hint: outcome.translated.hint } : {}) }
+          }
+          const result = (outcome.value.result ?? {}) as JsonObject
+          const messages = Array.isArray(result.messages) ? result.messages : []
+          const limit = args.limit ?? 40
+          const shown = messages.slice(Math.max(0, messages.length - limit))
+          return {
+            ok: true,
+            count: shown.length,
+            lastSeq: service.latestLogSeq(),
+            source: 'message-log-lines',
+            // Uniform entry shape: the engine sends `{severity, text, tokens}`, the
+            // ring sends `{level, category, text}`, and the render reads one shape.
+            entries: shown.map(message => {
+              const entry = (typeof message === 'object' && message !== null ? message : {}) as Record<string, JsonValue>
+              return jsonable({
+                level: typeof entry.severity === 'string' ? entry.severity : 'Unknown',
+                category: args.category,
+                text: typeof entry.text === 'string' ? entry.text : '',
+              })
+            }),
+          }
         }
-        return { ok: true, count: 1, lastSeq: service.latestLogSeq(), entries: [outcome.value.result as JsonValue] }
+        const outcome = await service.call({ method: 'messagelog.list', params: {}, session, signal: exec.signal })
+        if (!outcome.value.ok) {
+          return { ok: false, count: 0, lastSeq: 0, entries: [], source: 'message-log-categories', ...(outcome.translated ? { hint: outcome.translated.hint } : {}) }
+        }
+        const result = (outcome.value.result ?? {}) as JsonObject
+        const categories = Array.isArray(result.categories) ? result.categories : []
+        return {
+          ok: true,
+          count: categories.length,
+          lastSeq: service.latestLogSeq(),
+          source: 'message-log-categories',
+          entries: categories.map(category => {
+            const entry = (typeof category === 'object' && category !== null ? category : {}) as Record<string, JsonValue>
+            return jsonable({
+              level: 'MessageLog',
+              category: typeof entry.name === 'string' ? entry.name : '',
+              text: typeof entry.label === 'string' ? entry.label : '',
+            })
+          }),
+          hint: 'these are the categories the engine Message Log is holding, not their lines: pass category to read the lines inside one',
+        }
       }
       const entries = service.logs({
         ...(args.level ? { level: args.level } : {}),
@@ -276,6 +328,7 @@ export function makeOperationTools(
         ok: true,
         count: entries.length,
         lastSeq: service.latestLogSeq(),
+        source: 'ring',
         entries: entries.map(entry => jsonable({ seq: entry.seq, at: entry.at, level: entry.level, category: entry.category, text: entry.text, project: entry.project })),
         ...(entries.length === 0 && !service.config.logForwardingEnabled
           ? { hint: 'UE is not forwarding logs: this bridge only sees what the editor pushes. Set the console variable ual.ForwardLogs to 1 inside Unreal Editor, or pass pullMessageLog:true to read the engine Message Log instead.' }
